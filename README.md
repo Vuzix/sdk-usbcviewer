@@ -65,44 +65,50 @@ USB-C Viewer is connected to the phone:
 
 ## Usage
 
-### Sample Code
-Please refer to the sample client application for usage related to the provided entry points:
-- com.vuzix.sdk.usbcviewer.flashlight.Flashlight
-- com.vuzix.sdk.usbcviewer.sensors.Sensors
-
 ### Common
-Since the SDK presents functions of the external hardware, you must connect to each interface before it may be used by calling
-`connect()`. You should call `disconnect()` when finished. If the device is not available, the `connect()` call will throw an
-exception. You may optionally query `isDeviceAvailable()` prior to *connect()* to prevent this. To track whether or not you have
-connected you may evaluate the `connected` boolean property. A sample of that flow, minus exception handling, might look like:
+The SDK exposes functionality of the external hardware. You must explicitly connect to each interface before it may be used. Do so by calling
+`connect()` on the appropriate interface class.
+
+If the USB-C Viewer is not available, the `connect()` call will throw an exception.  You may optionally query `isDeviceAvailable()` prior
+to `connect()` to prevent this.
+
+Close the connection by calling `disconnect()` when the interface is no longer required.
+
+To track whether or not you have connected you may evaluate the `connected` boolean property. 
+
+A sample of that flow, minus exception handling, might look like:
 
 ```
-if( !usbcInterface.connected) {
-	if(usbcInterface.isDeviceAvailable()) {
+if( !usbcInterface.connected ) {
+	if( usbcInterface.isDeviceAvailable() ) {
 		usbcInterface.connect();
 	}
 }
 //todo: do something with the interface while connected, then
-if( usbcInterface.connected) {
+if( usbcInterface.connected ) {
 	usbcInterface.disconnect();
 }
 ```
 
 ### Flashlight
-The Flashlight API will allow you to toggle the ON/OFF state of the device Flashlight.
+The Flashlight interface is `com.vuzix.sdk.usbcviewer.flashlight.Flashlight`.
 
-Once a connection is initialized you only need to call `turnFlashlightOn()` or `turnFlashlightOff()`.
+The Flashlight interface class will allow you to toggle the ON/OFF state of the device Flashlight.
+
+Once a connection is initialized you may simply call `turnFlashlightOn()` and `turnFlashlightOff()`.
 
 ### Sensors
-The Sensors API will allow you to receive data from the device sensors. They come back in the following formats:
+The Sensors interface is `com.vuzix.sdk.usbcviewer.sensors.Sensors`.
+
+The Sensors interface class will allow you to receive data from the device sensors. They come back in the following formats:
 
 * Accelerometer: *meters per second squared*
 * Gyrometer: *degrees per second*
-* Magnetometer/Compass: *µ Teslas*
+* Magnetometer/Compass: *Âµ Teslas*
 
 The `Sensors` object requires a `VuzixSensorListener`. This is very similar to an
 [Android SensorEventListener](https://developer.android.com/reference/android/hardware/SensorEventListener) and all results are given to
-the `onSensorChanged()` method. It also adds an `onSensorInitialized()` to know when the asynchronous initialization completes on the
+the `onSensorChanged()` method. `VuzixSensorListener` also adds an `onSensorInitialized()` to know when the asynchronous initialization completes on the
 device, and an `onError()` in case the initialization fails or the device disconnects after being initialized.
 
 Once the connection is established, you will need to enable the sensors by calling `initializeSensors()`.
@@ -117,9 +123,9 @@ The data is stored in the `values` array and the axis corresponds as such:
 
 The axes returned by the SDK are defined according to the standard [Android Mobile Device Axes](https://source.android.com/devices/sensors/sensor-types)
 when the device being worn on the right eye. Note: The axes from the SDK different are different than the raw data described in the M400C data sheet.
+
 ![M400-C Sensor Orientation](docs/M400C-Android_Sensors.png)
 
 ## Technical Support
 Developers that own Vuzix USB-C viewer hardware may direct integration questions to
 [Vuzix technical support](https://www.vuzix.com/pages/contact-technical-support).
-
