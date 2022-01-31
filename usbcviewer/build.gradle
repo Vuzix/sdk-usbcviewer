@@ -4,6 +4,8 @@ plugins {
     id 'maven-publish'
 }
 
+def version = '0.0.1'
+
 android {
     compileSdk 31
 
@@ -11,7 +13,7 @@ android {
         minSdk 28
         targetSdk 31
         versionCode 1
-        versionName "1.0"
+        versionName "${version}"
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -32,8 +34,20 @@ android {
 }
 
 dependencies {
-
     implementation "androidx.core:core-ktx:${versions.core_ktx}"
     implementation "androidx.appcompat:appcompat:${versions.appcompat}"
     implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:${versions.coroutines}"
+}
+
+afterEvaluate {
+    publishing {
+        publications {
+            release(MavenPublication) {
+                from components.release
+                group = 'com.vuzix'
+                artifactId = 'sdk-usbcviewer'
+                version = "${ version }"
+            }
+        }
+    }
 }

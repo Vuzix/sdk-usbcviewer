@@ -55,6 +55,7 @@ class Sensors(context: Context, private val listener: VuzixSensorListener) : Vuz
     private lateinit var connection: UsbDeviceConnection
     private lateinit var sensorInterface: UsbInterface
     private lateinit var endpoint: UsbEndpoint
+    @Volatile
     private var getData: Boolean = false
     private var smooth: Boolean = false
     private var MAX_RETRIES = 3
@@ -94,6 +95,7 @@ class Sensors(context: Context, private val listener: VuzixSensorListener) : Vuz
      */
     override fun disconnect() {
         LogUtil.debug("disconnect")
+        stopSensorStream();
         try {
             connection.releaseInterface(sensorInterface)
             connection.close()
@@ -101,7 +103,6 @@ class Sensors(context: Context, private val listener: VuzixSensorListener) : Vuz
             // Eat it
         }
         connected = false
-        getData = false
         usbDevice = null
     }
 
@@ -164,6 +165,7 @@ class Sensors(context: Context, private val listener: VuzixSensorListener) : Vuz
                             listener.onError(Exception("Orientation Sensor failed to initialize."))
                         }
                         listener.onSensorInitialized()
+                        startSensorStream();
                     }
             } else {
                 throw Exception("Hid Device is null")
@@ -211,14 +213,13 @@ class Sensors(context: Context, private val listener: VuzixSensorListener) : Vuz
 
     /**
      * Function used to begin consuming the sensor data stream.
+     *
+     * This is called immediately after notifying the listener of onSensorInitialized()
      */
-    fun startSensorStream() {
+    private fun startSensorStream() {
         getData = true
         coroutineScope.launch {
-            while (true) {
-                if (!getData) {
-                    break
-                }
+            while (getData) {
                 val bytes = ByteArray(endpoint.maxPacketSize)
                 val read = connection.bulkTransfer(
                     endpoint, bytes, bytes.size,
@@ -230,15 +231,20 @@ class Sensors(context: Context, private val listener: VuzixSensorListener) : Vuz
                 // Interval is the device specified value needed inbetween each read.
                 delay(endpoint.interval.toLong())
             }
+            // TODO: De-initialize the sensor
         }
     }
 
     /**
      * Function used to stop consuming the sensor data stream separate from
      * the use of the [disconnect] function.
+     *
+     * TODO: This should be implemented publicly once we de-initialize the sensor to put the M400C
+     *       back in an idle state. Until then, let clients disconnect.
      */
-    fun stopSensorStream() {
+    private fun stopSensorStream() {
         getData = false
+        // TODO: This should join the coroutine so we know data has stopped
     }
 
     /**
