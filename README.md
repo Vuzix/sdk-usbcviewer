@@ -46,12 +46,18 @@ dependencies {
 For a full list of available release tags, and syntax to add to non-gradle projects, please see our
 [Jitpack Package Repository](https://jitpack.io/#com.vuzix/sdk-usbcviewer).
 
-Then ensure the following line is in your `AndroidManifest.xml` to declare that you use the USB feature for your app:
+## Application Manifest
+The *AndroidManifest.xml* file may require changes to interact with the USB-C Viewer.
+
+### Feature Declaration
+Ensure the following line is in your *AndroidManifest.xml* to declare that you use the USB feature for your app:
 
 `<uses-feature android:name="android.hardware.usb.host" />`
 
-Optionally, you can also add an `intent-filter` within your `activity` tag to automatically launch your app when the
-USB-C Viewer is connected to the phone:
+### Automatically Launching Your Application
+
+Optionally, you can add an `intent-filter` in your *AndroidManifest.xml* within an `activity` tag to automatically launch your app when the
+USB-C Viewer is connected to the phone.
 
 ```xml
 <activity>
@@ -66,15 +72,16 @@ USB-C Viewer is connected to the phone:
 ## Usage
 
 ### Common
-The SDK exposes functionality of the external hardware. You must explicitly connect to each interface before it may be used. Do so by calling
-`connect()` on the appropriate interface class.
+The SDK exposes functionality of the external hardware. There are multiple SDK interface classes to handle each set of related behaviors. These are
+described in subsequent sections below. Before using the specific behavior of each interface class, you must explicitly connect to the interface. To
+do so, create an instance of the appropriate interface class, then call its `connect()` method.
 
 If the USB-C Viewer is not available, the `connect()` call will throw an exception.  You may optionally query `isDeviceAvailable()` prior
-to `connect()` to prevent this.
+to `connect()` to avoid generatiung an exception.
 
 Close the connection by calling `disconnect()` when the interface is no longer required.
 
-To track whether or not you have connected you may evaluate the `connected` boolean property. 
+To track whether or not you have connected you may evaluate the `connected` boolean property of the interface class.
 
 A sample of that flow, minus exception handling, might look like:
 
@@ -84,8 +91,8 @@ if( !usbcInterface.connected ) {
 		usbcInterface.connect();
 	}
 }
-//todo: do something with the interface while connected, then
 if( usbcInterface.connected ) {
+	//todo: do something with the interface while connected, then
 	usbcInterface.disconnect();
 }
 ```
