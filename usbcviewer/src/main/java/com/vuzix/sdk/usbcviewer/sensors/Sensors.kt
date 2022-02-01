@@ -49,7 +49,7 @@ import kotlinx.coroutines.flow.flow
 import java.util.*
 import java.util.concurrent.TimeUnit
 
-class Sensors(context: Context, private val listener: VuzixSensorListener) : VuzixApi(context) {
+open class Sensors(context: Context, private val listener: VuzixSensorListener) : VuzixApi(context) {
 
     private val coroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private lateinit var connection: UsbDeviceConnection
@@ -66,6 +66,14 @@ class Sensors(context: Context, private val listener: VuzixSensorListener) : Vuz
     private val SENSOR_MAGNETOMETER_ID = 3
     private val SENSOR_ORIENTATION_ID = 4
 
+    protected override fun getUsbVendorId() : Int {
+        return M400cConstants.HID_VID;
+    }
+
+    protected override fun getUsbProductId() : Int {
+        return M400cConstants.HID_PID;
+    }
+
     /**
      * Function used to create the [UsbDeviceConnection]
      * needed in order to send the commands for turning the Flashlight/Torch
@@ -78,7 +86,7 @@ class Sensors(context: Context, private val listener: VuzixSensorListener) : Vuz
     @Throws(Exception::class)
     override fun connect() {
         LogUtil.debug("connect")
-        usbDevice = getHidDevice(usbManager)
+        usbDevice = getDevice()
         usbDevice?.let {
             sensorInterface = it.getInterface(M400cConstants.HID_SENSOR)
             endpoint = sensorInterface.getEndpoint(M400cConstants.HID_SENSOR_INBOUND)
@@ -87,7 +95,7 @@ class Sensors(context: Context, private val listener: VuzixSensorListener) : Vuz
                 throw Exception("Failed to claim Sensor Interface")
             }
             connected = connection.setInterface(sensorInterface)
-        } ?: throw Exception("Hid Device is null")
+        } ?: throw Exception("Compatible device is not connected")
     }
 
     /**
@@ -97,27 +105,13 @@ class Sensors(context: Context, private val listener: VuzixSensorListener) : Vuz
         LogUtil.debug("disconnect")
         stopSensorStream();
         try {
-            connection.releaseInterface(sensorInterface)
-            connection.close()
+            connection?.releaseInterface(sensorInterface)
+            connection?.close()
         } catch (e: Exception) {
             // Eat it
         }
         connected = false
         usbDevice = null
-    }
-
-    /**
-     * Function used to let you know if the video [UsbDevice] is null or not.
-     *
-     * @return True if not null.
-     */
-    override fun isDeviceAvailable(): Boolean {
-        return usbDevice?.let {
-            true
-        } ?: run {
-            usbDevice = getHidDevice(usbManager)
-            usbDevice != null
-        }
     }
 
     /**
@@ -139,37 +133,36 @@ class Sensors(context: Context, private val listener: VuzixSensorListener) : Vuz
         // typically end up not initializing all of the required sensors. By
         // structuring this to occur as part of a cascading Flow with flatMapConcat
         // it resolves the issue.
+        if(connection == null){
+            throw Exception("Must call connect() before initializeSensors")
+        }
         coroutineScope.launch {
-            if (isDeviceAvailable()) {
-                initSensor(SENSOR_ACCELEROMETER_ID)
-                    .flatMapConcat {
-                        if (!it) {
-                            listener.onError(Exception("Accelerometer failed to initialize."))
-                        }
-                        initSensor(SENSOR_GYRO_ID)
+            initSensor(SENSOR_ACCELEROMETER_ID)
+                .flatMapConcat {
+                    if (!it) {
+                        listener.onError(Exception("Accelerometer failed to initialize."))
                     }
-                    .flatMapConcat {
-                        if (!it) {
-                            listener.onError(Exception("Gyrometer failed to initialize."))
-                        }
-                        initSensor(SENSOR_MAGNETOMETER_ID)
+                    initSensor(SENSOR_GYRO_ID)
+                }
+                .flatMapConcat {
+                    if (!it) {
+                        listener.onError(Exception("Gyrometer failed to initialize."))
                     }
-                    .flatMapConcat {
-                        if (!it) {
-                            listener.onError(Exception("Magnetometer failed to initialize."))
-                        }
-                        initSensor(SENSOR_ORIENTATION_ID)
+                    initSensor(SENSOR_MAGNETOMETER_ID)
+                }
+                .flatMapConcat {
+                    if (!it) {
+                        listener.onError(Exception("Magnetometer failed to initialize."))
                     }
-                    .collect {
-                        if (!it) {
-                            listener.onError(Exception("Orientation Sensor failed to initialize."))
-                        }
-                        listener.onSensorInitialized()
-                        startSensorStream();
+                    initSensor(SENSOR_ORIENTATION_ID)
+                }
+                .collect {
+                    if (!it) {
+                        listener.onError(Exception("Orientation Sensor failed to initialize."))
                     }
-            } else {
-                throw Exception("Hid Device is null")
-            }
+                    listener.onSensorInitialized()
+                    startSensorStream();
+                }
         }
     }
 

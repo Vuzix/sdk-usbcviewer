@@ -32,12 +32,21 @@
 
 package com.vuzix.sdk.usbcviewer
 
+import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.pm.PackageManager
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbDeviceConnection
 import android.hardware.usb.UsbManager
+import com.vuzix.sdk.usbcviewer.utils.LogUtil
+import java.lang.ref.WeakReference
 
 abstract class VuzixApi(context: Context) {
+    private val context: WeakReference<Context> = WeakReference(context)
+    private var connectionListener: ConnectionListener? = null
     protected val usbManager: UsbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
     protected var usbDevice: UsbDevice? = null
 
@@ -45,24 +54,149 @@ abstract class VuzixApi(context: Context) {
     var connected: Boolean = false
     protected set
 
+    protected abstract fun getUsbVendorId() : Int
+
+    protected abstract fun getUsbProductId() : Int
+
     abstract fun connect()
 
     abstract fun disconnect()
 
-    abstract fun isDeviceAvailable(): Boolean
+    /**
+     * Starts monitoring for the device state to change
+     *
+     * Note: After calling this method you must later call unregisterDeviceMonitor
+     *
+     * @see unregisterDeviceMonitor
+     *
+     * @param ConnectionListener - callback for alerting of changes
+     *
+     * @return True if USB device is available and permissions are granted
+     */
+    open fun registerDeviceMonitor( connectionListener: ConnectionListener ) : Boolean {
+        this.connectionListener = connectionListener
 
-    protected fun getHidDevice(usbManager: UsbManager): UsbDevice? {
-        val devices = usbManager.deviceList
-        return devices.values.firstOrNull { device -> device.productId == M400cConstants.HID_PID && device.vendorId == M400cConstants.HID_VID }
+        val filter = IntentFilter(UsbManager.ACTION_USB_DEVICE_ATTACHED)
+        filter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
+        context.get()?.registerReceiver(mConnectDisconnectReceiver, filter)
+        if( isDeviceAvailable() ) { // isDeviceAvailable() sets usbDevice
+            val granted = checkPermission(usbDevice!!)
+            LogUtil.debug("Registered attach/detach listener while attached, granted=$granted")
+            return granted
+        }
+        LogUtil.debug("Registered attach/detach listener while not attached")
+        return false
     }
 
-    protected fun getVideoDevice(usbManager: UsbManager): UsbDevice? {
-        val devices = usbManager.deviceList
-        return devices.values.firstOrNull { device -> device.productId == M400cConstants.VIDEO_PID && device.vendorId == M400cConstants.VIDEO_VID }
+    /**
+     * Stops monitoring for the device state to change
+     *
+     * @see registerDeviceMonitor
+     */
+    open fun unregisterDeviceMonitor() {
+        if(connectionListener != null) {
+            LogUtil.debug("Unregistering attach/detach listener")
+            context.get()?.unregisterReceiver(mConnectDisconnectReceiver)
+            connectionListener = null
+        }
     }
 
-    protected fun getAudioDevice(usbManager: UsbManager): UsbDevice? {
-        val devices = usbManager.deviceList
-        return devices.values.firstOrNull { device -> device.productId == M400cConstants.AUDIO_PID && device.vendorId == M400cConstants.AUDIO_VID }
+    private fun checkPermission(usbDevice: UsbDevice) : Boolean{
+        var context = this.context.get()!!
+        if(!context.packageManager.hasSystemFeature(PackageManager.FEATURE_USB_HOST)) {
+            throw Exception("App does not have FEATURE_USB_HOST")
+        }
+        usbManager.hasPermission(usbDevice).let { granted ->
+            if (!granted) {
+                LogUtil.rel("Avoid permission dialog by adding a resources XML with <usb-device vendor-id=\"${getUsbVendorId()}\" product-id=\"${getUsbProductId()}\"/>")
+                val usbPermissionIntent = PendingIntent.getBroadcast(context, 0, Intent(M400cConstants.ACTION_USB_PERMISSION), 0)
+                val filter = IntentFilter(M400cConstants.ACTION_USB_PERMISSION)
+                context.registerReceiver(mPermissionReceiver, filter)
+                LogUtil.debug("Requesting permission")
+                usbManager.requestPermission(usbDevice, usbPermissionIntent)
+            }
+            return granted;
+        }
     }
+
+    private val mPermissionReceiver: BroadcastReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            if (M400cConstants.ACTION_USB_PERMISSION == intent.action) {
+                val device: UsbDevice? = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
+                val granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
+                LogUtil.rel("permission granted=$granted for device $device")
+                connectionListener?.onPermissionsChanged(granted)
+            }
+            context.unregisterReceiver(this)
+        }
+    }
+
+    private val mConnectDisconnectReceiver: BroadcastReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            val device = intent.getParcelableExtra<UsbDevice>(UsbManager.EXTRA_DEVICE)
+            LogUtil.debug("Got ${intent.action} for $device")
+            if( device?.productId == getUsbProductId() && device?.vendorId == getUsbVendorId() ) {
+                val connected = (UsbManager.ACTION_USB_DEVICE_ATTACHED == intent.action)
+                LogUtil.debug(" ${device?.productId} ${device?.vendorId} connected = $connected")
+                connectionListener?.onConnectionChanged(connected)
+                if(connected) {
+                    usbDevice = device;
+                    checkPermission(device)
+                }
+            }
+        }
+    }
+
+
+    protected fun getDevice(): UsbDevice? {
+        val devices = usbManager.deviceList
+        val vendorId = getUsbVendorId()
+        val productId = getUsbProductId()
+        val usbDevice = devices.values.firstOrNull { device -> device.productId == productId && device.vendorId == vendorId}
+        if(usbDevice == null) {
+            // help the developer and tech support by printing connection info
+            if (devices.size == 0) {
+                LogUtil.rel("No USB devices attached")
+            } else {
+                LogUtil.rel("Did not find $vendorId $productId")
+                for ((key, value) in devices) {
+                    LogUtil.rel("Non-matching USB: $key ${value.productName} ${value.vendorId} ${value.productId}")
+                }
+            }
+        }
+        return usbDevice
+    }
+
+    /**
+     * Function used to let you know if the video [UsbDevice] is available
+     *
+     * @return True if available
+     */
+    open fun isDeviceAvailable(): Boolean {
+        usbDevice = getDevice()
+        val available = (usbDevice != null)
+        LogUtil.debug("Available = $available")
+        return available
+    }
+
+    /**
+     * Function used to let you know if the video [UsbDevice] is available
+     * with all permissions granted
+     *
+     * This is identical to calling registerDeviceMonitor() but does not
+     * listen for the state to change.
+     *
+     * @see registerDeviceMonitor
+     *
+     * @return True if available and permissions are granted
+     */
+    open fun isDeviceAvailableAndAllowed(): Boolean {
+        if( isDeviceAvailable() ) { // isDeviceAvailable() sets usbDevice
+            val granted = usbManager.hasPermission(usbDevice)
+            LogUtil.debug("granted = $granted")
+            return granted
+        }
+        return false;
+    }
+
 }
