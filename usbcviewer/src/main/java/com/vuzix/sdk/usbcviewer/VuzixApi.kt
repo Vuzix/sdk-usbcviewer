@@ -45,6 +45,9 @@ import com.vuzix.sdk.usbcviewer.utils.LogUtil
 import java.lang.ref.WeakReference
 
 abstract class VuzixApi(context: Context) {
+    // Note: We store a WeakReference to the Context since it is possible that the Context owns
+    // this API class.  If we were to hold a normal strong reference to the Context, the garbage
+    // collector may never free us or the Context. Holding a WeakReference solves that problem.
     private val context: WeakReference<Context> = WeakReference(context)
     private var connectionListener: ConnectionListener? = null
     protected val usbManager: UsbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
@@ -61,6 +64,10 @@ abstract class VuzixApi(context: Context) {
     abstract fun connect()
 
     abstract fun disconnect()
+
+    private fun printableDevice(device: UsbDevice?) : String {
+        return "Device ${device?.productName} (${device?.vendorId} ${device?.productId})"
+    }
 
     /**
      * Starts monitoring for the device state to change
@@ -80,7 +87,7 @@ abstract class VuzixApi(context: Context) {
         filter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
         context.get()?.registerReceiver(mConnectDisconnectReceiver, filter)
         if( isDeviceAvailable() ) { // isDeviceAvailable() sets usbDevice
-            val granted = checkPermission(usbDevice!!)
+            val granted = checkPermission(usbDevice)
             LogUtil.debug("Registered attach/detach listener while attached, granted=$granted")
             return granted
         }
@@ -101,18 +108,19 @@ abstract class VuzixApi(context: Context) {
         }
     }
 
-    private fun checkPermission(usbDevice: UsbDevice) : Boolean{
+    private fun checkPermission(usbDevice: UsbDevice?) : Boolean{
+        // The context will exist until the calling app is garbage collected, so it's OK
+        // to assert here if it is null. Nobody should be calling this function by then
         var context = this.context.get()!!
         if(!context.packageManager.hasSystemFeature(PackageManager.FEATURE_USB_HOST)) {
             throw Exception("App does not have FEATURE_USB_HOST")
         }
         usbManager.hasPermission(usbDevice).let { granted ->
             if (!granted) {
-                LogUtil.rel("Avoid permission dialog by adding a resources XML with <usb-device vendor-id=\"${getUsbVendorId()}\" product-id=\"${getUsbProductId()}\"/>")
                 val usbPermissionIntent = PendingIntent.getBroadcast(context, 0, Intent(M400cConstants.ACTION_USB_PERMISSION), 0)
                 val filter = IntentFilter(M400cConstants.ACTION_USB_PERMISSION)
                 context.registerReceiver(mPermissionReceiver, filter)
-                LogUtil.debug("Requesting permission")
+                LogUtil.rel("Requesting permission to ${printableDevice(usbDevice)}")
                 usbManager.requestPermission(usbDevice, usbPermissionIntent)
             }
             return granted;
@@ -124,7 +132,7 @@ abstract class VuzixApi(context: Context) {
             if (M400cConstants.ACTION_USB_PERMISSION == intent.action) {
                 val device: UsbDevice? = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
                 val granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
-                LogUtil.rel("permission granted=$granted for device $device")
+                LogUtil.rel("permission granted=$granted for ${printableDevice(device)}")
                 connectionListener?.onPermissionsChanged(granted)
             }
             context.unregisterReceiver(this)
@@ -160,7 +168,7 @@ abstract class VuzixApi(context: Context) {
             } else {
                 LogUtil.rel("Did not find $vendorId $productId")
                 for ((key, value) in devices) {
-                    LogUtil.rel("Non-matching USB: $key ${value.productName} ${value.vendorId} ${value.productId}")
+                    LogUtil.rel("Non-matching USB: $key ${printableDevice(value)}")
                 }
             }
         }

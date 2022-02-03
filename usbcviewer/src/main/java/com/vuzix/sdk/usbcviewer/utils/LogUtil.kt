@@ -75,6 +75,16 @@ object LogUtil {
     }
 
     /**
+     * Function used for debug logging when you don't want these messages to show up
+     * in the release product. Explicitly writes with Debug Level Priority.
+     *
+     * @param payload Byte array to be displayed.
+     */
+    fun debug(message: String, payload: ByteArray, numBytes: Int) {
+        Log.d(tag, "$message ${payload.strPrint(numBytes)}")
+    }
+
+    /**
      * Function used for release logging when you want something to show up in the
      * release product. Explicitly writes with Info Level Priority.
      */
@@ -83,11 +93,13 @@ object LogUtil {
     }
 }
 
+
 // Extension functions that can be used for the purpose of logging ByteArray and FloatArray data
-fun ByteArray.strPrint(): String {
-    val hexChars = CharArray(this.size * 2)
+fun ByteArray.strPrint(numBytes : Int): String {
+    val finalSize = kotlin.math.min(numBytes, this.size)
+    val hexChars = CharArray(finalSize * 2)
     val hexArray = "0123456789ABCDEF".toCharArray()
-    for (i in this.indices) {
+    for (i in 0 until finalSize) {
         val v = this[i].toInt() and 0xFF
         hexChars[i * 2] = hexArray[v ushr 4]
         hexChars[i * 2 + 1] = hexArray[v and 0x0F]
