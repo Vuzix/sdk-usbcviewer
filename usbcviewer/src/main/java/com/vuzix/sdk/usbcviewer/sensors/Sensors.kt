@@ -58,11 +58,10 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
     private var MAX_RETRIES = 3
     private var usbReaderJob : Job? = null
 
-    // IDs for HID Sensors
-    private val SENSOR_ACCELEROMETER_ID = 1
-    private val SENSOR_GYRO_ID = 2
-    private val SENSOR_MAGNETOMETER_ID = 3
-    private val SENSOR_ORIENTATION_ID = 4
+    private val SENSOR_ACCELEROMETER_ID = 1   // kSENSOR_Accelerometer
+    private val SENSOR_GYRO_ID = 2            // kSENSOR_Gyro
+    private val SENSOR_MAGNETOMETER_ID = 3    // kSENSOR_Magnetometer
+    private val SENSOR_ORIENTATION_ID = 4     // kSENSOR_DeviceOrientation
 
     private val SENSOR_STOP = 1 // kStop
     private val SENSOR_RUN = 2  // kRun
@@ -255,15 +254,15 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
         LogUtil.debug("Starting sensor stream")
         while (getData) {
             val bytes = ByteArray(endpoint.maxPacketSize)
+            // Interval is the device specified value needed in between each read.
             delay(endpoint.interval.toLong())
             val read = connection.bulkTransfer(
                 endpoint, bytes, bytes.size,
                 TimeUnit.SECONDS.toMillis(1).toInt()
             )
-            //LogUtil.debug("Transfered $read bytes")
+            //LogUtil.debug("Sensor sent $read bytes: ", bytes, read)
             if (read > 0) {
                 listener.onSensorChanged(createSensorEvent(bytes.take(read).toByteArray()))
-                // Interval is the device specified value needed in between each read.
             } else {
                 listener.onError(Exception("USB sensor read failed $read closing interface"))
                 break
@@ -290,15 +289,20 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
      */
     private fun createSensorEvent(byteArray: ByteArray): VuzixSensorEvent {
         val mutableList: MutableList<Float> = mutableListOf()
-        // Developer Note: This goes against the actual Y and Z axis as defined by the device because
-        // it was originally designed for Windows and had different design parameters. We swap the
-        // Y and Z values here to better align with Android standards.
-        val xData: Short = bytesToShort(byteArray[4], byteArray[3])
-        val yData: Short = bytesToShort(byteArray[8], byteArray[7])
-        val zData: Short = bytesToShort(byteArray[6], byteArray[5])
+        val reportId = byteArray[0]
+        val sensorState = byteArray[1]
+        val sensorEvent = byteArray[2]
+        val deviceXData: Short = bytesToShort(byteArray[4], byteArray[3])
+        val deviceYData: Short = bytesToShort(byteArray[6], byteArray[5])
+        val deviceZData: Short = bytesToShort(byteArray[8], byteArray[7])
 
         return when (byteArray[0].toInt()) {
             SENSOR_ACCELEROMETER_ID -> {
+                //LogUtil.debug("Accelerometer: ID=${reportId} state=${sensorState} event=${sensorEvent} X=${deviceXData},Y=${deviceYData},Z=${deviceZData}")
+                // Device X+ is towards power button; Y+ is toward camera; Z+ towards nav buttons
+                val xData: Short = (-deviceXData).toShort()
+                val yData: Short = (-deviceZData).toShort()
+                val zData: Short = (deviceYData).toShort()
                 val accel = floatArrayOf(
                     calculateAccelData(xData),
                     calculateAccelData(yData),
@@ -313,6 +317,11 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
                 }
             }
             SENSOR_GYRO_ID -> {
+                //LogUtil.debug("Gyro: ID=${reportId} state=${sensorState} event=${sensorEvent} X=${deviceXData},Y=${deviceYData},Z=${deviceZData}")
+                // Device X+ is towards power button; Y+ is toward camera; Z+ towards nav buttons
+                val xData: Short = (deviceXData).toShort()
+                val yData: Short = (deviceZData).toShort()
+                val zData: Short = (-deviceYData).toShort()
                 mutableList.add(xData / 131f)
                 mutableList.add(yData / 131f)
                 mutableList.add(zData / 131f)
@@ -325,6 +334,12 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
                 }
             }
             SENSOR_MAGNETOMETER_ID -> {
+                val deviceAccuracy: Byte = byteArray[9]
+                // Different from orientation! Device X+ is towards power button; Y+ is toward USB; Z+ towards bottom of hinge
+                val xData: Short = (deviceXData).toShort()
+                val yData: Short = (deviceZData).toShort()
+                val zData: Short = (deviceYData).toShort()
+                //LogUtil.debug("Magnetometer: ID=${reportId} state=${sensorState} event=${sensorEvent} X=${deviceXData},Y=${deviceYData},Z=${deviceZData}, Accuracy=${deviceAccuracy}")
                 mutableList.add(xData / 1000f)
                 mutableList.add(yData / 1000f)
                 mutableList.add(zData / 1000f)
@@ -341,11 +356,13 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
                 }
             }
             SENSOR_ORIENTATION_ID -> {
-                val wData: Short = bytesToShort(byteArray[10], byteArray[9])
-                mutableList.add(xData / 1000f)
-                mutableList.add(yData / 1000f)
-                mutableList.add(zData / 1000f)
-                mutableList.add(wData / 1000f)
+                val deviceWData: Short = bytesToShort(byteArray[10], byteArray[9])
+                //LogUtil.debug("Orientation: ID=${reportId} state=${sensorState} event=${sensorEvent} X=${deviceXData},W=${deviceYData},Z=${deviceZData},W=${deviceWData}")
+                // todo: Re-map to a consistent axes as done in the simpler sensors
+                mutableList.add(deviceXData / 1000f)
+                mutableList.add(deviceYData / 1000f)
+                mutableList.add(deviceZData / 1000f)
+                mutableList.add(deviceWData / 1000f)
                 VuzixSensorEvent(Sensor.TYPE_ROTATION_VECTOR, mutableList.toFloatArray())
             }
             else -> throw Exception("Unknown Sensor Type Detected: ${byteArray[0]}")
