@@ -117,11 +117,13 @@ abstract class VuzixApi(context: Context) {
         }
         usbManager.hasPermission(usbDevice).let { granted ->
             if (!granted) {
-                val usbPermissionIntent = PendingIntent.getBroadcast(context, 0, Intent(M400cConstants.ACTION_USB_PERMISSION), 0)
-                val filter = IntentFilter(M400cConstants.ACTION_USB_PERMISSION)
+                val permIntent = Intent(M400cConstants.ACTION_USB_PERMISSION)
+                val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+                val usbPendingPerm = PendingIntent.getBroadcast(context, 0, permIntent,  flags)
+                val filter = IntentFilter(permIntent.action)
                 context.registerReceiver(mPermissionReceiver, filter)
                 LogUtil.rel("Requesting permission to ${printableDevice(usbDevice)}")
-                usbManager.requestPermission(usbDevice, usbPermissionIntent)
+                usbManager.requestPermission(usbDevice, usbPendingPerm)
             }
             return granted;
         }
@@ -130,8 +132,14 @@ abstract class VuzixApi(context: Context) {
     private val mPermissionReceiver: BroadcastReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (M400cConstants.ACTION_USB_PERMISSION == intent.action) {
+                var granted = false
                 val device: UsbDevice? = intent.getParcelableExtra(UsbManager.EXTRA_DEVICE)
-                val granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
+                if( (device != null) && intent.hasExtra(UsbManager.EXTRA_PERMISSION_GRANTED)) {
+                    granted = intent.getBooleanExtra(UsbManager.EXTRA_PERMISSION_GRANTED, false)
+                } else {
+                    LogUtil.debug("Intent came back without device and granted extras!")
+                    granted = usbManager.hasPermission(usbDevice)
+                }
                 LogUtil.rel("permission granted=$granted for ${printableDevice(device)}")
                 connectionListener?.onPermissionsChanged(granted)
             }

@@ -64,6 +64,11 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
     private val SENSOR_MAGNETOMETER_ID = 3    // kSENSOR_Magnetometer
     private val SENSOR_ORIENTATION_ID = 4     // kSENSOR_DeviceOrientation
 
+    private var useAccelerometer = false
+    private var useGyroscope = false
+    private var useMagnetometer = false
+    private var useOrientation = false
+
     /* Enumerated controls for M400C */
     private val SENSOR_STOP = 1 // kStop
     private val SENSOR_RUN = 2  // kRun
@@ -148,10 +153,18 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
      * specific sensor.
      */
     @Throws(Exception::class)
-    fun initializeSensors() {
+    fun initializeSensors(accelerometer: Boolean, gyroscope: Boolean, magnetometer: Boolean, orientation: Boolean) {
         if(connection == null){
             throw Exception("Must call connect() before initializeSensors")
         }
+        if(!(accelerometer or gyroscope or magnetometer or orientation)) {
+            throw Exception("No sensors selected")
+        }
+        useAccelerometer = accelerometer
+        useGyroscope = gyroscope
+        useMagnetometer = magnetometer
+        useOrientation = orientation
+
         usbReaderJob = coroutineScope.launch {
             // Use a do-while-false so we can break when we get an error
             do {
@@ -164,26 +177,28 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
                     listener.onError(Exception("HID device descriptor failed."))
                     break
                 }
-                if(!initSensor(SENSOR_ACCELEROMETER_ID, true)) {
+                if( useAccelerometer && !initSensor(SENSOR_ACCELEROMETER_ID, true)) {
                     listener.onError(Exception("Accelerometer failed to initialize."))
                     break
                 }
-                if(!initSensor(SENSOR_GYRO_ID, true)){
+                if(useGyroscope && !initSensor(SENSOR_GYRO_ID, true)){
                     listener.onError(Exception("Gyrometer failed to initialize."))
                     break
                 }
-                if(!initSensor(SENSOR_MAGNETOMETER_ID, true)){
+                if(useMagnetometer && !initSensor(SENSOR_MAGNETOMETER_ID, true)){
                     listener.onError(Exception("Magnetometer failed to initialize."))
                     break
                 }
-                if(!initSensor(SENSOR_ORIENTATION_ID, true)) {
+                if(useOrientation && !initSensor(SENSOR_ORIENTATION_ID, true)) {
                     listener.onError(Exception("Orientation Sensor failed to initialize."))
                     break
                 }
                 // Success!
                 listener.onSensorInitialized()
+
                 // We now repurpose this coroutine to pull the data from the USB
                 runSensorStream()
+
             } while(false)
             LogUtil.debug("Sensors loop completed. Stopping")
             // Disable all the sensors, ignore errors in case the device was unplugged
@@ -196,7 +211,9 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
 
     private suspend fun readDeviceConfiguration() : Boolean {
         val incomingBytes = ByteArray(1024) // Plenty of space
-        val requestType = (USB_REQUEST_TYPE_DIR_IN or USB_REQUEST_TYPE_TYPE_STANDARD or USB_REQUEST_TYPE_RECIPIENT_INTERFACE).toInt()
+        val requestType = (USB_REQUEST_TYPE_DIR_IN or
+                           USB_REQUEST_TYPE_TYPE_STANDARD or
+                           USB_REQUEST_TYPE_RECIPIENT_INTERFACE).toInt()
         val request = USB_REQUEST_STANDARD_GET_DESCRIPTOR.toInt()
         val requestValue = ((USB_DESCRIPTOR_TYPE_CONFIGURE shl(8))).toInt()
         val requestIndex = sensorUsbInterface.id
@@ -208,10 +225,13 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
                 LogUtil.rel("WARNING: HID device configuration truncated at $bytesRead")
             }
             if (bytesRead > 0) {
-                LogUtil.debug("HID device configuration for request: 0x${requestType.toString(16)} ${request.toString(16)} ${requestValue.toString(16)} ${requestIndex.toString(16)} returned size $bytesRead of ${incomingBytes.size} : ", incomingBytes, bytesRead)
+                LogUtil.debug("HID device configuration for request: 0x${requestType.toString(16)}" +
+                        " ${request.toString(16)} ${requestValue.toString(16)} ${requestIndex.toString(16)}" +
+                        " returned size $bytesRead of ${incomingBytes.size} : ", incomingBytes, bytesRead)
                 return true
             } else {
-                LogUtil.rel("HID device configuration failed $bytesRead. Request: 0x${requestType.toString(16)} ${request.toString(16)} ${requestValue.toString(16)} ${requestIndex.toString(16)}")
+                LogUtil.rel("HID device configuration failed $bytesRead. Request: 0x${requestType.toString(16)}" +
+                    " ${request.toString(16)} ${requestValue.toString(16)} ${requestIndex.toString(16)}")
             }
         }
         return false
@@ -231,10 +251,13 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
             }
             if (bytesRead > 0) {
                 // Decode the full output this with https://eleccelerator.com/usbdescreqparser/
-                LogUtil.debug("HID report for request: 0x${requestType.toString(16)} ${request.toString(16)} ${requestValue.toString(16)} ${requestIndex.toString(16)} returned size $bytesRead of ${incomingBytes.size} : ", incomingBytes, bytesRead)
+                LogUtil.debug("HID report for request: 0x${requestType.toString(16)} ${request.toString(16)}" +
+                        " ${requestValue.toString(16)} ${requestIndex.toString(16)} returned size $bytesRead" +
+                        " of ${incomingBytes.size} : ", incomingBytes, bytesRead)
                 return true
             } else {
-                LogUtil.rel("HID report failed $bytesRead. Request: 0x${requestType.toString(16)} ${request.toString(16)} ${requestValue.toString(16)} ${requestIndex.toString(16)}")
+                LogUtil.rel("HID report failed $bytesRead. Request: 0x${requestType.toString(16)} ${request.toString(16)}" +
+                        " ${requestValue.toString(16)} ${requestIndex.toString(16)}")
             }
         }
         return false
@@ -376,8 +399,9 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
             }
             SENSOR_MAGNETOMETER_ID -> {
                 val deviceAccuracy: Byte = byteArray[9]
+                //LogUtil.debug("Magnetometer: ID=${reportId} state=${sensorState} event=${sensorEvent}" +
+                // " X=${deviceXData},Y=${deviceYData},Z=${deviceZData}, Accuracy=${deviceAccuracy}")
                 // Different from orientation! Device X+ is towards power button; Y+ is toward USB; Z+ towards bottom of hinge
-                //LogUtil.debug("Magnetometer: ID=${reportId} state=${sensorState} event=${sensorEvent} X=${deviceXData},Y=${deviceYData},Z=${deviceZData}, Accuracy=${deviceAccuracy}")
                 val magnetometerData = floatArrayOf(
                     calculateMagnetometerData( (deviceXData).toShort() ),
                     calculateMagnetometerData( (deviceZData).toShort() ),
@@ -393,7 +417,8 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
             }
             SENSOR_ORIENTATION_ID -> {
                 val deviceWData: Short = bytesToShort(byteArray[10], byteArray[9])
-                //LogUtil.debug("Orientation: ID=${reportId} state=${sensorState} event=${sensorEvent} X=${deviceXData},W=${deviceYData},Z=${deviceZData},W=${deviceWData}")
+                // https://usb.org/sites/default/files/hut1_2.pdf defines the order as X,Y,Z,W
+                //
                 // https://stackoverflow.com/questions/4436764/rotating-a-quaternion-on-1-axis
                 // Device X+ is towards power button; Y+ is toward camera; Z+ towards nav buttons
                 // So rotate the reported data 90 degrees around X and the axes move appropriately
