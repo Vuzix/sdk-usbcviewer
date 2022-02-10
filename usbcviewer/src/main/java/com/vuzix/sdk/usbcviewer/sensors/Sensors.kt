@@ -38,6 +38,7 @@ import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbDeviceConnection
 import android.hardware.usb.UsbEndpoint
 import android.hardware.usb.UsbInterface
+import com.vuzix.sdk.usbcviewer.BuildConfig
 import com.vuzix.sdk.usbcviewer.M400cConstants
 import com.vuzix.sdk.usbcviewer.VuzixApi
 import com.vuzix.sdk.usbcviewer.utils.LogUtil
@@ -122,12 +123,10 @@ class Sensors(context: Context, private val listener: VuzixSensorListener) : Vuz
                 sensorUsbInterface = device.getInterface(M400cConstants.HID_SENSOR)
                 endpoint = sensorUsbInterface.getEndpoint(M400cConstants.HID_SENSOR_INBOUND)
                 connection = usbManager.openDevice(usbDevice)
-                connection.let {
-                    if (!it.claimInterface(sensorUsbInterface, true)) {
-                        throw Exception("Failed to claim Sensor Interface")
-                    }
-                    connected = it.setInterface(sensorUsbInterface)
+                if (!connection.claimInterface(sensorUsbInterface, true)) {
+                    throw Exception("Failed to claim Sensor Interface")
                 }
+                connected = connection.setInterface(sensorUsbInterface)
             } ?: throw Exception("Compatible device is not connected")
         }
     }
@@ -186,27 +185,29 @@ class Sensors(context: Context, private val listener: VuzixSensorListener) : Vuz
             // Use a do-while-false so we can break when we get an error
             do {
                 LogUtil.debug("Starting sensors")
-                if (!readDeviceConfiguration()) {
-                    listener.onError(Exception("HID read device configuration failed."))
-                    break
+                if (BuildConfig.DEBUG) {
+                    if (!readDeviceConfiguration()) {
+                        listener.onError(Exception("HID read device configuration failed."))
+                        break
+                    }
+                    if (!readHidReport()) {
+                        listener.onError(Exception("HID device descriptor failed."))
+                        break
+                    }
                 }
-                if (!readHidReport()) {
-                    listener.onError(Exception("HID device descriptor failed."))
-                    break
-                }
-                if (useAccelerometer && !initSensor(SENSOR_ACCELEROMETER_ID, true)) {
+                if (useAccelerometer && !setSensorState(SENSOR_ACCELEROMETER_ID, true)) {
                     listener.onError(Exception("Accelerometer failed to initialize."))
                     break
                 }
-                if (useGyroscope && !initSensor(SENSOR_GYRO_ID, true)) {
+                if (useGyroscope && !setSensorState(SENSOR_GYRO_ID, true)) {
                     listener.onError(Exception("Gyrometer failed to initialize."))
                     break
                 }
-                if (useMagnetometer && !initSensor(SENSOR_MAGNETOMETER_ID, true)) {
+                if (useMagnetometer && !setSensorState(SENSOR_MAGNETOMETER_ID, true)) {
                     listener.onError(Exception("Magnetometer failed to initialize."))
                     break
                 }
-                if (useOrientation && !initSensor(SENSOR_ORIENTATION_ID, true)) {
+                if (useOrientation && !setSensorState(SENSOR_ORIENTATION_ID, true)) {
                     listener.onError(Exception("Orientation Sensor failed to initialize."))
                     break
                 }
@@ -219,10 +220,10 @@ class Sensors(context: Context, private val listener: VuzixSensorListener) : Vuz
             } while (false)
             LogUtil.debug("Sensors loop completed. Stopping")
             // Disable all the sensors, ignore errors in case the device was unplugged
-            initSensor(SENSOR_ORIENTATION_ID, false)
-            initSensor(SENSOR_MAGNETOMETER_ID, false)
-            initSensor(SENSOR_GYRO_ID, false)
-            initSensor(SENSOR_ACCELEROMETER_ID, false)
+            setSensorState(SENSOR_ORIENTATION_ID, false)
+            setSensorState(SENSOR_MAGNETOMETER_ID, false)
+            setSensorState(SENSOR_GYRO_ID, false)
+            setSensorState(SENSOR_ACCELEROMETER_ID, false)
         }
     }
 
@@ -313,9 +314,9 @@ class Sensors(context: Context, private val listener: VuzixSensorListener) : Vuz
     }
 
     /**
-     * Common function to initialize a given sensor. Makes three attempts.
+     * Common function to initialize or stop a given sensor. Makes three attempts.
      */
-    private suspend fun initSensor(sensor: Int, useSensor: Boolean): Boolean {
+    private suspend fun setSensorState(sensor: Int, useSensor: Boolean): Boolean {
         val action = if (useSensor) "Initializing" else "De-initializing"
         if ((!useSensor) && (!sensorInitTrackingList.contains(sensor))) {
             // Nothing to do. We're stopping a sensor we never started.
