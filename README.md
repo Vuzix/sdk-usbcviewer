@@ -35,15 +35,18 @@ allprojects {
 }
 ```
 
-And add the dependecy to your project gradle:
+And add the dependency for the SDK to your project gradle, along with the listed Kotlin
+dependencies if not already included:
 
 ```
 dependencies {
   implementation 'com.vuzix:sdk-usbcviewer:0.0.1'
+  implementation "androidx.core:core-ktx:1.7.0"
+  implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.5.2"
 }
 ```
 
-For a full list of available release tags, and syntax to add to non-gradle projects, please see our
+For a full list of available SDK release tags, and syntax to add to non-gradle projects, please see our
 [Jitpack Package Repository](https://jitpack.io/#com.vuzix/sdk-usbcviewer).
 
 ## Application Manifest
@@ -77,7 +80,20 @@ described in subsequent sections below. Before using the specific behavior of ea
 do so, create an instance of the appropriate interface class, then call its `connect()` method.
 
 If the USB-C Viewer is not available, the `connect()` call will throw an exception.  You may optionally query `isDeviceAvailable()` prior
-to `connect()` to avoid generatiung an exception.
+to `connect()` to avoid generating an exception.
+
+If you use runtime permissions instead of manifest permissions you should use `isDeviceAvailableAndAllowed()`
+instead of `isDeviceAvailable()` to add the additional permission check.
+
+Since your application may be run without the device being attached, you may also start a listener to
+detect device connection changes.  This will automatically detect if dynamic permissions are required
+for the new device and prompt the user for those as well. You will receive a callback indicating when
+the device is ready to use. Register this by calling `registerDeviceMonitor()`. This returns `true`
+if the device is already connected and fully ready to use, identically to the return of
+`isDeviceAvailableAndAllowed()`. This is the preferred connection check.
+
+If you started listening for device stat changes, call `unregisterDeviceMonitor` when device state
+changes are no longer required.
 
 Close the connection by calling `disconnect()` when the interface is no longer required.
 
@@ -87,7 +103,7 @@ A sample of that flow, minus exception handling, might look like:
 
 ```
 if( !usbcInterface.connected ) {
-	if( usbcInterface.isDeviceAvailable() ) {
+	if( usbcInterface.registerDeviceMonitor(myUsbStateChangeHandler) ) {
 		usbcInterface.connect();
 	}
 }
@@ -118,15 +134,19 @@ The `Sensors` object requires a `VuzixSensorListener`. This is very similar to a
 the `onSensorChanged()` method. `VuzixSensorListener` also adds an `onSensorInitialized()` to know when the asynchronous initialization completes on the
 device, and an `onError()` in case the initialization fails or the device disconnects after being initialized.
 
-Once the connection is established, you will need to enable the sensors by calling `initializeSensors()`.
+Once the connection is established, you will need to enable the sensors by calling `initializeSensors()`. This interface provides boolean parameters
+to explicitly enable or disable each sensor that is required.
 
 Once the sensor data is initialized, you will receive the data in the form of a `VuzixSensorEvent` object. This contains a `sensorType`
-value of type `Sensor.TYPE_ACCELEROMETER`, `Sensor.TYPE_MAGNETIC_FIELD`, or `Sensor.TYPE_GYROSCOPE`.
+value of type `Sensor.TYPE_ACCELEROMETER`, `Sensor.TYPE_MAGNETIC_FIELD`, `Sensor.TYPE_GYROSCOPE`, or `Sensor.TYPE_ROTATION_VECTOR`.
 
 The data is stored in the `values` array and the axis corresponds as such:
 * `values[0]` = x-axis
 * `values[1]` = y-axis
 * `values[2]` = z-axis
+
+For rotation vectors a fourth float is included: 
+* `values[3]` = w-axis
 
 The axes returned by the SDK are defined according to the standard [Android Mobile Device Axes](https://source.android.com/devices/sensors/sensor-types)
 when the device being worn on the right eye. Note: The axes from the SDK different are different than the raw data described in the M400C data sheet.

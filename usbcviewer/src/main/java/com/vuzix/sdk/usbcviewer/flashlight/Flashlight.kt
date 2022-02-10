@@ -56,6 +56,14 @@ class Flashlight(context: Context): VuzixApi(context) {
     private val FLASHLIGHT_ON = 9
     private val FLASHLIGHT_OFF = 10
 
+    protected override fun getUsbVendorId() : Int {
+        return M400cConstants.VIDEO_VID;
+    }
+
+    protected override fun getUsbProductId() : Int {
+        return M400cConstants.VIDEO_PID;
+    }
+
     /**
      * Function used to create the [UsbDeviceConnection]
      * needed in order to send the commands for turning the Flashlight/Torch
@@ -68,7 +76,7 @@ class Flashlight(context: Context): VuzixApi(context) {
     @Throws(Exception::class)
     override fun connect() {
         LogUtil.debug("connect")
-        usbDevice = getVideoDevice(usbManager)
+        usbDevice = getDevice()
         usbDevice?.let {
             flashlightInterface = it.getInterface(M400cConstants.VIDEO_HID)
             connection = usbManager.openDevice(it)
@@ -92,20 +100,6 @@ class Flashlight(context: Context): VuzixApi(context) {
         }
         connected = false
         usbDevice = null
-    }
-
-    /**
-     * Function used to let you know if the video [UsbDevice] is null or not.
-     *
-     * @return True if not null.
-     */
-    override fun isDeviceAvailable(): Boolean {
-        return usbDevice?.let {
-            true
-        } ?: run {
-            usbDevice = getVideoDevice(usbManager)
-            usbDevice != null
-        }
     }
 
     /**
