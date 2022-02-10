@@ -41,22 +41,28 @@ import android.hardware.usb.UsbInterface
 import com.vuzix.sdk.usbcviewer.M400cConstants
 import com.vuzix.sdk.usbcviewer.VuzixApi
 import com.vuzix.sdk.usbcviewer.utils.LogUtil
-import kotlinx.coroutines.*
-import java.util.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import java.util.LinkedList
 import java.util.concurrent.TimeUnit
 
-open class Sensors(context: Context, private val listener: VuzixSensorListener) : VuzixApi(context) {
+class Sensors(context: Context, private val listener: VuzixSensorListener) : VuzixApi(context) {
 
     private val coroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private var threadSync = Object()
     private lateinit var connection: UsbDeviceConnection
     private lateinit var sensorUsbInterface: UsbInterface
     private lateinit var endpoint: UsbEndpoint
+
     @Volatile
     private var getData: Boolean = false
     private var smooth: Boolean = false
     private var MAX_RETRIES = 3
-    private var usbReaderJob : Job? = null
+    private var usbReaderJob: Job? = null
 
     /* Definitions for M400C as reported in HID report */
     private val SENSOR_ACCELEROMETER_ID = 1   // kSENSOR_Accelerometer
@@ -85,16 +91,16 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
     private val USB_REQUEST_TYPE_TYPE_CLASS = (0x20U)
     private val USB_REQUEST_TYPE_RECIPIENT_INTERFACE = (0x01U)
 
-    private val USB_REQUEST_STANDARD_SET_FEATURE =(0x03U)
-    private val USB_REQUEST_STANDARD_GET_DESCRIPTOR =(0x06U)
+    private val USB_REQUEST_STANDARD_SET_FEATURE = (0x03U)
+    private val USB_REQUEST_STANDARD_GET_DESCRIPTOR = (0x06U)
     private val USB_DESCRIPTOR_TYPE_CONFIGURE = (0x02U)
     private val USB_DESCRIPTOR_TYPE_HID_REPORT = (0x22U)
 
-    protected override fun getUsbVendorId() : Int {
+    override fun getUsbVendorId(): Int {
         return M400cConstants.HID_VID
     }
 
-    protected override fun getUsbProductId() : Int {
+    override fun getUsbProductId(): Int {
         return M400cConstants.HID_PID
     }
 
@@ -112,14 +118,16 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
         LogUtil.debug("connect")
         synchronized(threadSync) {
             usbDevice = getDevice()
-            usbDevice?.let {
-                sensorUsbInterface = it.getInterface(M400cConstants.HID_SENSOR)
+            usbDevice?.let { device ->
+                sensorUsbInterface = device.getInterface(M400cConstants.HID_SENSOR)
                 endpoint = sensorUsbInterface.getEndpoint(M400cConstants.HID_SENSOR_INBOUND)
                 connection = usbManager.openDevice(usbDevice)
-                if (!connection.claimInterface(sensorUsbInterface, true)) {
-                    throw Exception("Failed to claim Sensor Interface")
+                connection.let {
+                    if (!it.claimInterface(sensorUsbInterface, true)) {
+                        throw Exception("Failed to claim Sensor Interface")
+                    }
+                    connected = it.setInterface(sensorUsbInterface)
                 }
-                connected = connection.setInterface(sensorUsbInterface)
             } ?: throw Exception("Compatible device is not connected")
         }
     }
@@ -133,14 +141,15 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
             stopSensorStream()
             synchronized(threadSync) {
                 try {
-                    connection?.releaseInterface(sensorUsbInterface)
-                    connection?.close()
+                    connection.releaseInterface(sensorUsbInterface)
+                    connection.close()
                     LogUtil.rel("Sensors disconnected")
                 } catch (e: Exception) {
                     // Eat it
                 }
                 connected = false
                 usbDevice = null
+                usbReaderJob?.cancel()
             }
         }
     }
@@ -156,11 +165,16 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
      * specific sensor.
      */
     @Throws(Exception::class)
-    fun initializeSensors(accelerometer: Boolean, gyroscope: Boolean, magnetometer: Boolean, orientation: Boolean) {
-        if(connection == null){
+    fun initializeSensors(
+        accelerometer: Boolean,
+        gyroscope: Boolean,
+        magnetometer: Boolean,
+        orientation: Boolean
+    ) {
+        if (usbDevice == null || !connected) {
             throw Exception("Must call connect() before initializeSensors")
         }
-        if(!(accelerometer or gyroscope or magnetometer or orientation)) {
+        if (!(accelerometer or gyroscope or magnetometer or orientation)) {
             throw Exception("No sensors selected")
         }
         useAccelerometer = accelerometer
@@ -172,27 +186,27 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
             // Use a do-while-false so we can break when we get an error
             do {
                 LogUtil.debug("Starting sensors")
-                if(!readDeviceConfiguration()){
+                if (!readDeviceConfiguration()) {
                     listener.onError(Exception("HID read device configuration failed."))
                     break
                 }
-                if(!readHidReport()){
+                if (!readHidReport()) {
                     listener.onError(Exception("HID device descriptor failed."))
                     break
                 }
-                if( useAccelerometer && !initSensor(SENSOR_ACCELEROMETER_ID, true)) {
+                if (useAccelerometer && !initSensor(SENSOR_ACCELEROMETER_ID, true)) {
                     listener.onError(Exception("Accelerometer failed to initialize."))
                     break
                 }
-                if(useGyroscope && !initSensor(SENSOR_GYRO_ID, true)){
+                if (useGyroscope && !initSensor(SENSOR_GYRO_ID, true)) {
                     listener.onError(Exception("Gyrometer failed to initialize."))
                     break
                 }
-                if(useMagnetometer && !initSensor(SENSOR_MAGNETOMETER_ID, true)){
+                if (useMagnetometer && !initSensor(SENSOR_MAGNETOMETER_ID, true)) {
                     listener.onError(Exception("Magnetometer failed to initialize."))
                     break
                 }
-                if(useOrientation && !initSensor(SENSOR_ORIENTATION_ID, true)) {
+                if (useOrientation && !initSensor(SENSOR_ORIENTATION_ID, true)) {
                     listener.onError(Exception("Orientation Sensor failed to initialize."))
                     break
                 }
@@ -202,7 +216,7 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
                 // We now repurpose this coroutine to pull the data from the USB
                 runSensorStream()
 
-            } while(false)
+            } while (false)
             LogUtil.debug("Sensors loop completed. Stopping")
             // Disable all the sensors, ignore errors in case the device was unplugged
             initSensor(SENSOR_ORIENTATION_ID, false)
@@ -212,55 +226,87 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
         }
     }
 
-    private suspend fun readDeviceConfiguration() : Boolean {
+    private fun readDeviceConfiguration(): Boolean {
         val incomingBytes = ByteArray(1024) // Plenty of space
         val requestType = (USB_REQUEST_TYPE_DIR_IN or
-                           USB_REQUEST_TYPE_TYPE_STANDARD or
-                           USB_REQUEST_TYPE_RECIPIENT_INTERFACE).toInt()
+                USB_REQUEST_TYPE_TYPE_STANDARD or
+                USB_REQUEST_TYPE_RECIPIENT_INTERFACE).toInt()
         val request = USB_REQUEST_STANDARD_GET_DESCRIPTOR.toInt()
-        val requestValue = ((USB_DESCRIPTOR_TYPE_CONFIGURE shl(8))).toInt()
+        val requestValue = ((USB_DESCRIPTOR_TYPE_CONFIGURE shl (8))).toInt()
         val requestIndex = sensorUsbInterface.id
         val timeoutMs = TimeUnit.SECONDS.toMillis(1).toInt()
 
-        for(attemptNum in 1..MAX_RETRIES) {
-            val bytesRead = connection.controlTransfer(requestType, request, requestValue, requestIndex,incomingBytes,incomingBytes.size, timeoutMs)
-            if(bytesRead == incomingBytes.size) {
+        for (attemptNum in 1..MAX_RETRIES) {
+            val bytesRead = connection.controlTransfer(
+                requestType,
+                request,
+                requestValue,
+                requestIndex,
+                incomingBytes,
+                incomingBytes.size,
+                timeoutMs
+            )
+            if (bytesRead == incomingBytes.size) {
                 LogUtil.rel("WARNING: HID device configuration truncated at $bytesRead")
             }
             if (bytesRead > 0) {
-                LogUtil.debug("HID device configuration for request: 0x${requestType.toString(16)}" +
-                        " ${request.toString(16)} ${requestValue.toString(16)} ${requestIndex.toString(16)}" +
-                        " returned size $bytesRead of ${incomingBytes.size} : ", incomingBytes, bytesRead)
+                LogUtil.debug(
+                    "HID device configuration for request: " +
+                            "0x${requestType.toString(16)} ${request.toString(16)} " +
+                            "${requestValue.toString(16)} ${requestIndex.toString(16)} " +
+                            "returned size $bytesRead of ${incomingBytes.size} : ",
+                    incomingBytes,
+                    bytesRead
+                )
                 return true
             } else {
-                LogUtil.rel("HID device configuration failed $bytesRead. Request: 0x${requestType.toString(16)}" +
-                    " ${request.toString(16)} ${requestValue.toString(16)} ${requestIndex.toString(16)}")
+                LogUtil.rel(
+                    "HID device configuration failed $bytesRead. " +
+                            "Request: 0x${requestType.toString(16)}" +
+                            " ${request.toString(16)} " +
+                            "${requestValue.toString(16)} ${requestIndex.toString(16)}"
+                )
             }
         }
         return false
     }
 
-    private suspend fun readHidReport() : Boolean {
-        val incomingBytes = ByteArray(4*1024) // Plenty of space
-        val requestType = (USB_REQUEST_TYPE_DIR_IN or USB_REQUEST_TYPE_TYPE_STANDARD or USB_REQUEST_TYPE_RECIPIENT_INTERFACE).toInt()
+    private fun readHidReport(): Boolean {
+        val incomingBytes = ByteArray(4 * 1024) // Plenty of space
+        val requestType =
+            (USB_REQUEST_TYPE_DIR_IN or USB_REQUEST_TYPE_TYPE_STANDARD or USB_REQUEST_TYPE_RECIPIENT_INTERFACE).toInt()
         val request = USB_REQUEST_STANDARD_GET_DESCRIPTOR.toInt()
-        val requestValue = ((USB_DESCRIPTOR_TYPE_HID_REPORT shl(8))).toInt()
+        val requestValue = ((USB_DESCRIPTOR_TYPE_HID_REPORT shl (8))).toInt()
         val requestIndex = sensorUsbInterface.id
         val timeoutMs = TimeUnit.SECONDS.toMillis(1).toInt()
-        for(attemptNum in 1..MAX_RETRIES) {
-            val bytesRead = connection.controlTransfer(requestType, request, requestValue, requestIndex, incomingBytes, incomingBytes.size, timeoutMs)
-            if(bytesRead == incomingBytes.size) {
+        for (attemptNum in 1..MAX_RETRIES) {
+            val bytesRead = connection.controlTransfer(
+                requestType,
+                request,
+                requestValue,
+                requestIndex,
+                incomingBytes,
+                incomingBytes.size,
+                timeoutMs
+            )
+            if (bytesRead == incomingBytes.size) {
                 LogUtil.rel("WARNING: HID report for sensor: truncated at $bytesRead")
             }
             if (bytesRead > 0) {
                 // Decode the full output this with https://eleccelerator.com/usbdescreqparser/
-                LogUtil.debug("HID report for request: 0x${requestType.toString(16)} ${request.toString(16)}" +
-                        " ${requestValue.toString(16)} ${requestIndex.toString(16)} returned size $bytesRead" +
-                        " of ${incomingBytes.size} : ", incomingBytes, bytesRead)
+                LogUtil.debug(
+                    "HID report for request: 0x${requestType.toString(16)} ${request.toString(16)}" +
+                            " ${requestValue.toString(16)} ${requestIndex.toString(16)} returned size $bytesRead" +
+                            " of ${incomingBytes.size} : ", incomingBytes, bytesRead
+                )
                 return true
             } else {
-                LogUtil.rel("HID report failed $bytesRead. Request: 0x${requestType.toString(16)} ${request.toString(16)}" +
-                        " ${requestValue.toString(16)} ${requestIndex.toString(16)}")
+                LogUtil.rel(
+                    "HID report failed $bytesRead. Request: 0x${requestType.toString(16)} " +
+                            request.toString(16) +
+                            " ${requestValue.toString(16)} " +
+                            requestIndex.toString(16)
+                )
             }
         }
         return false
@@ -269,10 +315,10 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
     /**
      * Common function to initialize a given sensor. Makes three attempts.
      */
-    private suspend fun initSensor(sensor: Int, useSensor: Boolean ): Boolean {
-        val action= if(useSensor)"Initializing" else "De-initializing"
-        if((!useSensor) && (!sensorInitTrackingList.contains(sensor))) {
-            // Nothing to do. We're stopping a sensor we never started
+    private suspend fun initSensor(sensor: Int, useSensor: Boolean): Boolean {
+        val action = if (useSensor) "Initializing" else "De-initializing"
+        if ((!useSensor) && (!sensorInitTrackingList.contains(sensor))) {
+            // Nothing to do. We're stopping a sensor we never started.
             return true
         }
         LogUtil.debug("$action sensor $sensor")
@@ -282,7 +328,7 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
             var xfered = connection.controlTransfer(
                 (USB_REQUEST_TYPE_DIR_OUT or USB_REQUEST_TYPE_TYPE_CLASS or USB_REQUEST_TYPE_RECIPIENT_INTERFACE).toInt(),
                 USB_DEVICE_HID_REQUEST_SET_REPORT.toInt(),
-                (USB_REQUEST_STANDARD_SET_FEATURE shl(8) or sensor.toUInt()).toInt(),
+                (USB_REQUEST_STANDARD_SET_FEATURE shl (8) or sensor.toUInt()).toInt(),
                 sensorUsbInterface.id,
                 requestBytes,
                 requestBytes.size,
@@ -294,17 +340,18 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
                 xfered = connection.controlTransfer(
                     (USB_REQUEST_TYPE_DIR_IN or USB_REQUEST_TYPE_TYPE_CLASS or USB_REQUEST_TYPE_RECIPIENT_INTERFACE).toInt(),
                     USB_DEVICE_HID_REQUEST_GET_REPORT.toInt(),
-                    (USB_REQUEST_STANDARD_SET_FEATURE shl(8) or sensor.toUInt()).toInt(),
+                    (USB_REQUEST_STANDARD_SET_FEATURE shl (8) or sensor.toUInt()).toInt(),
                     sensorUsbInterface.id,
                     incomingBytes,
                     incomingBytes.size,
                     TimeUnit.SECONDS.toMillis(1).toInt()
                 )
                 if (xfered >= 0) {
-                    val readBackOk =(requestBytes.copyOfRange(0,lastByteToReadBack).contentEquals(incomingBytes.copyOfRange(0,lastByteToReadBack)))
-                    if(readBackOk) {
-                        if( useSensor ) {
-                            if(waitForDataFromSensor(sensor)) {
+                    val readBackOk = (requestBytes.copyOfRange(0, lastByteToReadBack)
+                        .contentEquals(incomingBytes.copyOfRange(0, lastByteToReadBack)))
+                    if (readBackOk) {
+                        if (useSensor) {
+                            if (waitForDataFromSensor(sensor)) {
                                 sensorInitTrackingList.add(sensor)
                                 return true
                             }
@@ -312,19 +359,27 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
                         } else {
                             // Not using the sensor, we're done
                             sensorInitTrackingList.remove(sensor)
-                            return true;
+                            return true
                         }
                     }
                     LogUtil.rel("Read-back verification failure sensor $sensor")
-                    LogUtil.debug("$action Sensor: $sensor requested. Packet: ", requestBytes, requestBytes.size)
-                    LogUtil.debug("$action Sensor: $sensor completed. Packet: ", incomingBytes, xfered)
+                    LogUtil.debug(
+                        "$action Sensor: $sensor requested. Packet: ",
+                        requestBytes,
+                        requestBytes.size
+                    )
+                    LogUtil.debug(
+                        "$action Sensor: $sensor completed. Packet: ",
+                        incomingBytes,
+                        xfered
+                    )
                 }
             } else {
                 LogUtil.debug("$action Sensor: $sensor failed: $xfered")
             }
             delay(500)
         }
-        if(useSensor) {
+        if (useSensor) {
             LogUtil.rel("Sensor: $sensor failed to initialize")
         }
         return false
@@ -339,8 +394,8 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
         LogUtil.debug("Waiting for sensor $sensor")
         val startTime = System.currentTimeMillis()
         val MAX_MILLISECS_TO_WAIT = 5000L
-        while ((System.currentTimeMillis() - startTime ) < MAX_MILLISECS_TO_WAIT) {
-            var bytes = ByteArray(endpoint.maxPacketSize)
+        while ((System.currentTimeMillis() - startTime) < MAX_MILLISECS_TO_WAIT) {
+            val bytes = ByteArray(endpoint.maxPacketSize)
             val read = connection.bulkTransfer(
                 endpoint,
                 bytes,
@@ -348,12 +403,12 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
                 TimeUnit.SECONDS.toMillis(1).toInt()
             )
             if (read > 0) {
-                if(bytes[0].toInt() == sensor) {
-                    // we got data from the correct sensor!
+                if (bytes[0].toInt() == sensor) {
+                    // Data is coming from the correct sensor
                     LogUtil.debug("Got data from $sensor")
                     return true
                 } else {
-                    //LogUtil.debug("Got data from wrong $sensor continuing to wait")
+                    // LogUtil.debug("Got data from wrong $sensor continuing to wait")
                 }
             } else {
                 LogUtil.rel("Failed to read-back sensor $sensor : $read")
@@ -375,12 +430,11 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
         while (getData) {
             val bytes = ByteArray(endpoint.maxPacketSize)
             // Interval is the device specified value needed in between each read.
-            //delay(endpoint.interval.toLong())
             val read = connection.bulkTransfer(
                 endpoint, bytes, bytes.size,
                 TimeUnit.SECONDS.toMillis(1).toInt()
             )
-            //LogUtil.debug("Sensor sent $read bytes: ", bytes, read)
+            // LogUtil.debug("Sensor sent $read bytes: ", bytes, read)
             if (read > 0) {
                 listener.onSensorChanged(createSensorEvent(bytes.take(read).toByteArray()))
             } else {
@@ -409,20 +463,20 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
      */
     private fun createSensorEvent(byteArray: ByteArray): VuzixSensorEvent {
         val reportId = byteArray[0]
-        val sensorState = byteArray[1]
-        val sensorEvent = byteArray[2]
+        val sensorState = byteArray[1] // Used for debug purposes
+        val sensorEvent = byteArray[2] // Used for debug purposes
         val deviceXData: Short = bytesToShort(byteArray[4], byteArray[3])
         val deviceYData: Short = bytesToShort(byteArray[6], byteArray[5])
         val deviceZData: Short = bytesToShort(byteArray[8], byteArray[7])
 
-        return when (byteArray[0].toInt()) {
+        return when (reportId.toInt()) {
             SENSOR_ACCELEROMETER_ID -> {
-                //LogUtil.debug("Accelerometer: ID=${reportId} state=${sensorState} event=${sensorEvent} X=${deviceXData},Y=${deviceYData},Z=${deviceZData}")
+                // LogUtil.debug("Accelerometer: ID=${reportId} state=${sensorState} event=${sensorEvent} X=${deviceXData},Y=${deviceYData},Z=${deviceZData}")
                 // Device X+ is towards power button; Y+ is toward camera; Z+ towards nav buttons
                 val accel = floatArrayOf(
-                    calculateAccelData( (-deviceXData).toShort() ),
-                    calculateAccelData( (-deviceZData).toShort() ),
-                    calculateAccelData( ( deviceYData).toShort() )
+                    calculateAccelData((-deviceXData).toShort()),
+                    calculateAccelData((-deviceZData).toShort()),
+                    calculateAccelData((deviceYData))
                 )
                 if (smooth) {
                     val accelAvg = floatArrayOf(0f, 0f, 0f)
@@ -433,12 +487,12 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
                 }
             }
             SENSOR_GYRO_ID -> {
-                //LogUtil.debug("Gyro: ID=${reportId} state=${sensorState} event=${sensorEvent} X=${deviceXData},Y=${deviceYData},Z=${deviceZData}")
+                // LogUtil.debug("Gyro: ID=${reportId} state=${sensorState} event=${sensorEvent} X=${deviceXData},Y=${deviceYData},Z=${deviceZData}")
                 // Device X+ is towards power button; Y+ is toward camera; Z+ towards nav buttons
                 val gyroData = floatArrayOf(
-                    calculateGyroData( ( deviceXData).toShort() ),
-                    calculateGyroData( ( deviceZData).toShort() ),
-                    calculateGyroData( (-deviceYData).toShort() )
+                    calculateGyroData((deviceXData)),
+                    calculateGyroData((deviceZData)),
+                    calculateGyroData((-deviceYData).toShort())
                 )
                 if (smooth) {
                     val gyroAvg = floatArrayOf(0f, 0f, 0f)
@@ -449,14 +503,14 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
                 }
             }
             SENSOR_MAGNETOMETER_ID -> {
-                val deviceAccuracy: Byte = byteArray[9]
-                //LogUtil.debug("Magnetometer: ID=${reportId} state=${sensorState} event=${sensorEvent}" +
+                val deviceAccuracy: Byte = byteArray[9] // Used for debug purposes
+                // LogUtil.debug("Magnetometer: ID=${reportId} state=${sensorState} event=${sensorEvent}" +
                 // " X=${deviceXData},Y=${deviceYData},Z=${deviceZData}, Accuracy=${deviceAccuracy}")
                 // Different from orientation! Device X+ is towards power button; Y+ is toward USB; Z+ towards bottom of hinge
                 val magnetometerData = floatArrayOf(
-                    calculateMagnetometerData( (deviceXData).toShort() ),
-                    calculateMagnetometerData( (deviceZData).toShort() ),
-                    calculateMagnetometerData( (deviceYData).toShort() )
+                    calculateMagnetometerData((deviceXData)),
+                    calculateMagnetometerData((deviceZData)),
+                    calculateMagnetometerData((deviceYData))
                 )
                 if (smooth) {
                     val magAvg = floatArrayOf(0f, 0f, 0f)
@@ -473,11 +527,26 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
                 // https://stackoverflow.com/questions/4436764/rotating-a-quaternion-on-1-axis
                 // Device X+ is towards power button; Y+ is toward camera; Z+ towards nav buttons
                 // So rotate the reported data 90 degrees around X and the axes move appropriately
-                val sensorQuaternion = Quaternion(calculateRotationData(deviceXData), calculateRotationData(deviceYData), calculateRotationData(deviceZData), calculateRotationData(deviceWData))
-                val manipulationQuaternion = Quaternion.axisAngle(1.0f, 0.0f, 0.0f, 90.0f) // rotate about X axis by 90 degrees
+                val sensorQuaternion = Quaternion(
+                    calculateRotationData(deviceXData),
+                    calculateRotationData(deviceYData),
+                    calculateRotationData(deviceZData),
+                    calculateRotationData(deviceWData)
+                )
+                val manipulationQuaternion = Quaternion.axisAngle(
+                    1.0f,
+                    0.0f,
+                    0.0f,
+                    90.0f
+                ) // rotate about X axis by 90 degrees
                 val axisRemappedData = Quaternion.multiply(sensorQuaternion, manipulationQuaternion)
-                val rotationData = floatArrayOf(axisRemappedData.x, axisRemappedData.y, axisRemappedData.z, axisRemappedData.w)
-                //LogUtil.debug("Orientation rotated: X=${rotationData[0]},Y=${rotationData[1]},Z=${rotationData[2]},W=${rotationData[3]} with $manipulationQuaternion")
+                val rotationData = floatArrayOf(
+                    axisRemappedData.x,
+                    axisRemappedData.y,
+                    axisRemappedData.z,
+                    axisRemappedData.w
+                )
+                // LogUtil.debug("Orientation rotated: X=${rotationData[0]},Y=${rotationData[1]},Z=${rotationData[2]},W=${rotationData[3]} with $manipulationQuaternion")
                 VuzixSensorEvent(Sensor.TYPE_ROTATION_VECTOR, rotationData)
             }
             else -> throw Exception("Unknown Sensor Type Detected: ${byteArray[0]}")
@@ -496,10 +565,10 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
         // HID spec specifies the default unit of measure is G’s
         //
         // Android wants m/S^2 so we multiply by 9.8
-        return ((value  / 100.0) * 9.8).toFloat()
+        return ((value / 100.0) * 9.8).toFloat()
     }
 
-    private fun calculateGyroData(value: Short) : Float {
+    private fun calculateGyroData(value: Short): Float {
         // This is described in the HID report under HID_USAGE_SENSOR_TYPE_MOTION_GYROMETER_3D which
         // contains HID_USAGE_SENSOR_STATE for HID_USAGE_SENSOR_DATA_MOTION_ANGULAR_VELOCITY_X_AXIS,
         // HID_USAGE_SENSOR_DATA_MOTION_ANGULAR_VELOCITY_Y_AXIS, and
@@ -513,7 +582,7 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
         return ((value / 100.0) * Math.PI / 180.0).toFloat()
     }
 
-    private fun calculateMagnetometerData(value: Short) : Float {
+    private fun calculateMagnetometerData(value: Short): Float {
         // This is described in the HID report under HID_USAGE_SENSOR_TYPE_ORIENTATION_COMPASS_3D which
         // contains HID_USAGE_SENSOR_STATE for HID_USAGE_SENSOR_DATA_ORIENTATION_MAGNETIC_FLUX_X_AXIS,
         // HID_USAGE_SENSOR_DATA_ORIENTATION_MAGNETIC_FLUX_Y_AXIS, and
@@ -526,7 +595,7 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
         return (value / 10000.0).toFloat()
     }
 
-    private fun calculateRotationData(value: Short) : Float {
+    private fun calculateRotationData(value: Short): Float {
         // This is described in the HID report under HID_USAGE_SENSOR_TYPE_ORIENTATION_DEVICE_ORIENTATION which
         // contains HID_USAGE_SENSOR_STATE for HID_USAGE_SENSOR_DATA_ORIENTATION_QUATERNION which
         // contains HID_UNIT_EXPONENT(0x0D)
@@ -540,26 +609,32 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
     }
 
     /** Function used to generate the ByteArray needed to initialize a given sensor */
-    private fun getSensorControlPacket(sensorId: Int, run: Boolean, reportIntervalMs: Long = 4): Pair<Int,ByteArray> {
+    private fun getSensorControlPacket(
+        sensorId: Int,
+        run: Boolean,
+        reportIntervalMs: Long = 4
+    ): Pair<Int, ByteArray> {
         val LAST_BYTE_FOR_COMPARISON = 8
-        return Pair(LAST_BYTE_FOR_COMPARISON, byteArrayOf(
-            sensorId.toByte(), // 0 kReportID
-            2, // 1 kConnectionType (ignored)
-            ( if (run) SENSOR_RUN else SENSOR_STOP).toByte(), // 2 kReportingState
-            2, // 3 kPowerState (ignored)
-            2, // 4 kSensorState (ignored)
-            (reportIntervalMs and 0xFF).toByte(), // 5 kReportInterval0
-            ((reportIntervalMs shr 8) and 0xFF).toByte(), // 6 kReportInterval1
-            ((reportIntervalMs shr 16) and 0xFF).toByte(), // 7 kReportInterval2
-            ((reportIntervalMs shr 24) and 0xFF).toByte(), // 8 kReportInterval3
-            // the LAST_BYTE_FOR_COMPARISON is immediately above here
-            0, // 9 kChangeSensitivity0 (ignored)
-            0, // 10 kChangeSensitivity1 (ignored)
-            (0xFF).toByte(), // 11 (ignored)
-            0x1F, // 12 (ignored)
-            0, // 13 (ignored)
-            0 // 14 (ignored)
-        ))
+        return Pair(
+            LAST_BYTE_FOR_COMPARISON, byteArrayOf(
+                sensorId.toByte(), // 0 kReportID
+                2, // 1 kConnectionType (ignored)
+                (if (run) SENSOR_RUN else SENSOR_STOP).toByte(), // 2 kReportingState
+                2, // 3 kPowerState (ignored)
+                2, // 4 kSensorState (ignored)
+                (reportIntervalMs and 0xFF).toByte(), // 5 kReportInterval0
+                ((reportIntervalMs shr 8) and 0xFF).toByte(), // 6 kReportInterval1
+                ((reportIntervalMs shr 16) and 0xFF).toByte(), // 7 kReportInterval2
+                ((reportIntervalMs shr 24) and 0xFF).toByte(), // 8 kReportInterval3
+                // the LAST_BYTE_FOR_COMPARISON is immediately above here
+                0, // 9 kChangeSensitivity0 (ignored)
+                0, // 10 kChangeSensitivity1 (ignored)
+                (0xFF).toByte(), // 11 (ignored)
+                0x1F, // 12 (ignored)
+                0, // 13 (ignored)
+                0 // 14 (ignored)
+            )
+        )
     }
 
     private val accBuffer = LinkedList<FloatArray>().also {
