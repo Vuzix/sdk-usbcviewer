@@ -134,15 +134,19 @@ The `Sensors` object requires a `VuzixSensorListener`. This is very similar to a
 the `onSensorChanged()` method. `VuzixSensorListener` also adds an `onSensorInitialized()` to know when the asynchronous initialization completes on the
 device, and an `onError()` in case the initialization fails or the device disconnects after being initialized.
 
-Once the connection is established, you will need to enable the sensors by calling `initializeSensors()`.
+Once the connection is established, you will need to enable the sensors by calling `initializeSensors()`. This interface provides boolean parameters
+to explicitly enable or disable each sensor that is required.
 
 Once the sensor data is initialized, you will receive the data in the form of a `VuzixSensorEvent` object. This contains a `sensorType`
-value of type `Sensor.TYPE_ACCELEROMETER`, `Sensor.TYPE_MAGNETIC_FIELD`, or `Sensor.TYPE_GYROSCOPE`.
+value of type `Sensor.TYPE_ACCELEROMETER`, `Sensor.TYPE_MAGNETIC_FIELD`, `Sensor.TYPE_GYROSCOPE`, or `Sensor.TYPE_ROTATION_VECTOR`.
 
 The data is stored in the `values` array and the axis corresponds as such:
 * `values[0]` = x-axis
 * `values[1]` = y-axis
 * `values[2]` = z-axis
+
+For rotation vectors a fourth float is included: 
+* `values[3]` = w-axis
 
 The axes returned by the SDK are defined according to the standard [Android Mobile Device Axes](https://source.android.com/devices/sensors/sensor-types)
 when the device being worn on the right eye. Note: The axes from the SDK different are different than the raw data described in the M400C data sheet.
