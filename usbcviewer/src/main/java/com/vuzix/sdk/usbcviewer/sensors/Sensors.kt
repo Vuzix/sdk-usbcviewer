@@ -470,8 +470,9 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
         // https://usb.org/sites/default/files/hut1_2.pdf defines "Exponent D Sel 0.001"
         //
         // The sensor gives magnetic flux in 3 decimals of precision, so we divide by 1000
-        // Hid spec specifies the default unit of measure is milligauss.
-        return (value / 1000.0).toFloat()
+        // Hid spec specifies the default unit of measure is milligauss, Android wants micro-Tesla (µT).
+        // (10mG = 1µT) so divide by another 10. (Total division by 10,000)
+        return (value / 10000.0).toFloat()
     }
 
     private fun calculateRotationData(value: Short) : Float {
