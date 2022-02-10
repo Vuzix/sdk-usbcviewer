@@ -69,6 +69,8 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
     private var useMagnetometer = false
     private var useOrientation = false
 
+    private var sensorInitTrackingList = arrayListOf<Int>()
+
     /* Enumerated controls for M400C */
     private val SENSOR_STOP = 1 // kStop
     private val SENSOR_RUN = 2  // kRun
@@ -133,6 +135,7 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
                 try {
                     connection?.releaseInterface(sensorUsbInterface)
                     connection?.close()
+                    LogUtil.rel("Sensors disconnected")
                 } catch (e: Exception) {
                     // Eat it
                 }
@@ -268,6 +271,10 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
      */
     private suspend fun initSensor(sensor: Int, useSensor: Boolean ): Boolean {
         val action= if(useSensor)"Initializing" else "De-initializing"
+        if((!useSensor) && (!sensorInitTrackingList.contains(sensor))) {
+            // Nothing to do. We're stopping a sensor we never started
+            return true
+        }
         LogUtil.debug("$action sensor $sensor")
         delay(100) // Hack since some sensors don't start
         val (lastByteToReadBack, requestBytes) = getSensorControlPacket(sensor, useSensor)
@@ -296,7 +303,17 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
                 if (xfered >= 0) {
                     val readBackOk =(requestBytes.copyOfRange(0,lastByteToReadBack).contentEquals(incomingBytes.copyOfRange(0,lastByteToReadBack)))
                     if(readBackOk) {
-                        return true;
+                        if( useSensor ) {
+                            if(waitForDataFromSensor(sensor)) {
+                                sensorInitTrackingList.add(sensor)
+                                return true
+                            }
+                            return false
+                        } else {
+                            // Not using the sensor, we're done
+                            sensorInitTrackingList.remove(sensor)
+                            return true;
+                        }
                     }
                     LogUtil.rel("Read-back verification failure sensor $sensor")
                     LogUtil.debug("$action Sensor: $sensor requested. Packet: ", requestBytes, requestBytes.size)
@@ -310,6 +327,40 @@ open class Sensors(context: Context, private val listener: VuzixSensorListener) 
         if(useSensor) {
             LogUtil.rel("Sensor: $sensor failed to initialize")
         }
+        return false
+    }
+
+    /**
+     * Read all data and discard until the selected sensor reports in
+     *
+     * @param sensor valid sensor 1-4, or negative when purging
+     */
+    private fun waitForDataFromSensor(sensor: Int): Boolean {
+        LogUtil.debug("Waiting for sensor $sensor")
+        val startTime = System.currentTimeMillis()
+        val MAX_MILLISECS_TO_WAIT = 5000L
+        while ((System.currentTimeMillis() - startTime ) < MAX_MILLISECS_TO_WAIT) {
+            var bytes = ByteArray(endpoint.maxPacketSize)
+            val read = connection.bulkTransfer(
+                endpoint,
+                bytes,
+                bytes.size,
+                TimeUnit.SECONDS.toMillis(1).toInt()
+            )
+            if (read > 0) {
+                if(bytes[0].toInt() == sensor) {
+                    // we got data from the correct sensor!
+                    LogUtil.debug("Got data from $sensor")
+                    return true
+                } else {
+                    //LogUtil.debug("Got data from wrong $sensor continuing to wait")
+                }
+            } else {
+                LogUtil.rel("Failed to read-back sensor $sensor : $read")
+                return false
+            }
+        }
+        LogUtil.rel("Sensor $sensor not sending data. Aborting.")
         return false
     }
 
