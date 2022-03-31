@@ -522,33 +522,13 @@ class Sensors(context: Context, private val listener: VuzixSensorListener) : Vuz
                 }
             }
             SENSOR_ORIENTATION_ID -> {
-                val deviceWData: Short = bytesToShort(byteArray[10], byteArray[9])
                 // https://usb.org/sites/default/files/hut1_2.pdf defines the order as X,Y,Z,W
-                //
-                // https://stackoverflow.com/questions/4436764/rotating-a-quaternion-on-1-axis
-                // Device X+ is towards power button; Y+ is toward camera; Z+ towards nav buttons
-                // So rotate the reported data 90 degrees around X and the axes move appropriately
-                val sensorQuaternion = Quaternion(
-                    calculateRotationData(deviceXData),
-                    calculateRotationData(deviceYData),
-                    calculateRotationData(deviceZData),
-                    calculateRotationData(deviceWData)
-                )
-                val manipulationQuaternion = Quaternion.axisAngle(
-                    1.0f,
-                    0.0f,
-                    0.0f,
-                    90.0f
-                ) // rotate about X axis by 90 degrees
-                val axisRemappedData = Quaternion.multiply(sensorQuaternion, manipulationQuaternion)
-                val rotationData = floatArrayOf(
-                    axisRemappedData.x,
-                    axisRemappedData.y,
-                    axisRemappedData.z,
-                    axisRemappedData.w
-                )
-                // LogUtil.debug("Orientation rotated: X=${rotationData[0]},Y=${rotationData[1]},Z=${rotationData[2]},W=${rotationData[3]} with $manipulationQuaternion")
-                VuzixSensorEvent(Sensor.TYPE_ROTATION_VECTOR, rotationData)
+                val deviceWData: Short = bytesToShort(byteArray[10], byteArray[9])
+                val updatedQuaternion = rotateQuaternionAxes( calculateRotationData(deviceXData),
+                                                          calculateRotationData(deviceYData),
+                                                          calculateRotationData(deviceZData),
+                                                          calculateRotationData(deviceWData) )
+                VuzixSensorEvent(Sensor.TYPE_ROTATION_VECTOR, updatedQuaternion)
             }
             else -> throw Exception("Unknown Sensor Type Detected: ${byteArray[0]}")
         }
@@ -607,6 +587,23 @@ class Sensors(context: Context, private val listener: VuzixSensorListener) : Vuz
         //1.0) that represent rotation in space about a unit vector. No units
         //are specified and scaling is by the Unit Exponent usage."
         return (value / 1000.0).toFloat()
+    }
+
+    private fun rotateQuaternionAxes(x_val: Float, y_val: Float, z_val: Float, w_val: Float) : FloatArray {
+        // https://stackoverflow.com/questions/4436764/rotating-a-quaternion-on-1-axis
+        // Device X+ is towards power button; Y+ is toward camera; Z+ towards nav buttons
+        // So rotate the reported data 90 degrees around X and the axes move appropriately
+        val sensorQuaternion: Quaternion = Quaternion(x_val, y_val, z_val, w_val)
+        val manipulationQuaternion = Quaternion.axisAngle(1.0f, 0.0f, 0.0f, 90.0f)
+        val axisRemappedData = Quaternion.multiply(sensorQuaternion, manipulationQuaternion)
+        val rotationData = floatArrayOf(
+            axisRemappedData.x,
+            axisRemappedData.y,
+            axisRemappedData.z,
+            axisRemappedData.w
+        )
+        //LogUtil.debug("Orientation Orig: $sensorQuaternion Rotated: $axisRemappedData")
+        return rotationData
     }
 
     /** Function used to generate the ByteArray needed to initialize a given sensor */
