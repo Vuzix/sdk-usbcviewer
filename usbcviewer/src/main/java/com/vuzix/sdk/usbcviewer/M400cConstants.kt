@@ -35,7 +35,7 @@ package com.vuzix.sdk.usbcviewer
 object M400cConstants {
     const val ACTION_USB_PERMISSION = "com.android.vuzix.USB_PERMISSION"
     // HID
-    const val HID_PID = 458
+    const val HID_PID = 509
     const val HID_VID = 7086
     // VIDEO
     const val VIDEO_PID = 195
