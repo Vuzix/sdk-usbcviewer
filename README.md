@@ -76,52 +76,80 @@ USB-C Viewer is connected to the phone.
 
 ### Common
 The SDK exposes functionality of the external hardware. There are multiple SDK interface classes to handle each set of related behaviors. These are
-described in subsequent sections below. Before using the specific behavior of each interface class, you must explicitly connect to the interface. To
-do so, create an instance of the appropriate interface class, then call its `connect()` method.
-
-If the USB-C Viewer is not available, the `connect()` call will throw an exception.  You may optionally query `isDeviceAvailable()` prior
-to `connect()` to avoid generating an exception.
-
-If you use runtime permissions instead of manifest permissions you should use `isDeviceAvailableAndAllowed()`
-instead of `isDeviceAvailable()` to add the additional permission check.
+described in subsequent sections below. Before using the specific behavior of each interface class, you must explicitly grant USB permission to use the device. 
 
 Since your application may be run without the device being attached, you may also start a listener to
 detect device connection changes.  This will automatically detect if dynamic permissions are required
 for the new device and prompt the user for those as well. You will receive a callback indicating when
-the device is ready to use. Register this by calling `registerDeviceMonitor()`. This returns `true`
-if the device is already connected and fully ready to use, identically to the return of
-`isDeviceAvailableAndAllowed()`. This is the preferred connection check.
+the device is ready to use. 
 
-If you started listening for device stat changes, call `unregisterDeviceMonitor` when device state
-changes are no longer required.
+First you will want to register a `ConnectionListener` to recieve callbacks when connection changes or permissions change. 
+```
+USBCDeviceManager.shared(context).registerDeviceMonitor(<ConnectionListener>)
+```
 
-Close the connection by calling `disconnect()` when the interface is no longer required.
+Second you will want to check the permissions to the M400c device by calling: 
+```
+USBCDeviceManager.shared(context).checkPermissions()
+```
+if the permissions are granted you can listen for a call back in your ConnectionListener.   If permissions have not yet been granted then 
+this will prompt the user to grant the permissions to all of the M400c usb devices. 
 
-To track whether or not you have connected you may evaluate the `connected` boolean property of the interface class.
+You may optionally query `isDeviceAvailable()` to test if a M400c device is connected to the phone. 
+
 
 A sample of that flow, minus exception handling, might look like:
 
 ```
-if( !usbcInterface.connected ) {
-	if( usbcInterface.registerDeviceMonitor(myUsbStateChangeHandler) ) {
-		usbcInterface.connect();
-	}
+val manager = USBCDeviceManager.shared(this)
+manager.registerDeviceMonitor(this)
+if (manager.hasPermissionsBeenGranted()) {
+     // do something!           
 }
-if( usbcInterface.connected ) {
-	//todo: do something with the interface while connected, then
-	usbcInterface.disconnect();
+else {
+    manager.checkPermissions()
 }
 ```
 
-### Flashlight
-The Flashlight interface is `com.vuzix.sdk.usbcviewer.flashlight.Flashlight`.
+## Device Control Interface
+The main device control interface is `USBCDeviceManager.shared(context).deviceControlInterface`. This interface is used to control main aspects of
+you device.  You can control things like:
+*  Restore Defaults 
+*  Brightness 
+*  Force Left Eye 
+*  Autorotation 
+*  Change the button Key Codes on physical press
+For instance to change the brightness of the device: `USBCDeviceManager.shared(context).deviceControlInterface?.setBrightness(190)`
+or to change auto-rotate: `USBCDeviceManager.shared(context).deviceControlInterface?.setAutoRotation(true/false)`
 
-The Flashlight interface class will allow you to toggle the ON/OFF state of the device Flashlight.
+## Camera Interface
+The Camera interface is `USBCDeviceManager.shared(context).cameraInterface`.  This interface is used to control additional custom commands 
+that do not use the UVC API. This HID endpoint uses a simple 64 byte buffer to read and write data to the camera controller from a host application. 
 
-Once a connection is initialized you may simply call `turnFlashlightOn()` and `turnFlashlightOff()`.
+You can change properties such as:
+*  Exposure Compensation, 
+*  Flicker Cancel Priority Control
+*  Max Frame Rate Control
+*  AF Mode
+*  Noise Reduction
+*  Scanner Mode
+*  Color Mode
+*  JPEG Quality
+*  Torch On
+*  Torch Off
+*  Torch On (Still)
+*  Flash On
+*  Flash Auto
+*  Flash Off
+*  Auto Rotation 
+*  Left Eye Mode
 
-### Sensors
-The Sensors interface is `com.vuzix.sdk.usbcviewer.sensors.Sensors`.
+For instance to turn on the Flashlight: `USBCDeviceManager.shared(context).cameraInterface?.setFlashLight(true)`
+or to change the color mode of the camera: `USBCDeviceManager.shared(context).cameraInterface?.setColorMode(ColorMode.NEGATIVE)`
+or to change the camera to auto-rotate: `USBCDeviceManager.shared(context).cameraInterface?.setAutoRotation(true)`
+
+### Sensor Interface
+The Sensors interface is `USBCDeviceManger.shared(context).sensorInterface`.
 
 The Sensors interface class will allow you to receive data from the device sensors. They come back in the following formats:
 
@@ -132,12 +160,11 @@ The Sensors interface class will allow you to receive data from the device senso
 The `Sensors` object requires a `VuzixSensorListener`. This is very similar to an
 [Android SensorEventListener](https://developer.android.com/reference/android/hardware/SensorEventListener) and all results are given to
 the `onSensorChanged()` method. `VuzixSensorListener` also adds an `onSensorInitialized()` to know when the asynchronous initialization completes on the
-device, and an `onError()` in case the initialization fails or the device disconnects after being initialized.
+device, and an `onError()` in case the initialization fails or the device disconnects after being initialized.  You can setup this listener by calling `USBCDeviceManager.shared(context).sensorInterface?.registerListener(<VuzixSensorListener>)`
 
-Once the connection is established, you will need to enable the sensors by calling `initializeSensors()`. This interface provides boolean parameters
-to explicitly enable or disable each sensor that is required.
+You can start listen to a sensor by calling `USBCDeviceManger.shared(context).sensorInterface?.startUpdatingSensor(type, milliseconds_report_rate)`
 
-Once the sensor data is initialized, you will receive the data in the form of a `VuzixSensorEvent` object. This contains a `sensorType`
+Once the sensor starts updating, you will receive the data in the form of a `VuzixSensorEvent` object. This contains a `sensorType`
 value of type `Sensor.TYPE_ACCELEROMETER`, `Sensor.TYPE_MAGNETIC_FIELD`, `Sensor.TYPE_GYROSCOPE`, or `Sensor.TYPE_ROTATION_VECTOR`.
 
 The data is stored in the `values` array and the axis corresponds as such:
@@ -152,6 +179,12 @@ The axes returned by the SDK are defined according to the standard [Android Mobi
 when the device being worn on the right eye. Note: The axes from the SDK different are different than the raw data described in the M400C data sheet.
 
 ![M400-C Sensor Orientation](docs/M400C-Android_Sensors.png)
+
+## Touchpad Contol Interface
+The Touchpad interface is `USBCDeviceManager.shared(context).touchpadInterface`.  
+You can disable/enable the touchpad with `USBCDeviceManager.shared(context).touchpadInterface?.setTouchPadEnabled(true/false)`
+You can swap the horizontal, vertical, pan, scroll and zoom directions by calling:
+`USBCDeviceManager.shared(context).touchpadInterface?.setTouchPadOrientation(<TouchPadSettings>)`  and passing in a TouchPadSettings object.
 
 ## Technical Support
 Developers that own Vuzix USB-C viewer hardware may direct integration questions to
