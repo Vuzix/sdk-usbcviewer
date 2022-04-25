@@ -34,31 +34,37 @@ package com.vuzix.sdk.usbcviewer
 
 object M400cConstants {
     const val ACTION_USB_PERMISSION = "com.android.vuzix.USB_PERMISSION"
-    // HID
-    const val HID_PID = 509
-    const val HID_VID = 7086
-    // VIDEO
-    const val VIDEO_PID = 195
-    const val VIDEO_VID = 1204
+
+    // Main Viewer Interface controls (auto-rotate, brightness, buttons key codes, etc)
+    const val VIEWER_PID = 509   // 0x01fd
+    const val VIEWER_VID = 7086   // 0x1bea
+
+    // TOUCHPAD Control
+    const val HID_TOUCHPAD_VID = 7086   // 0x1bea
+    const val HID_TOUCHPAD_PID = 1296  // 0x0510
+
+    // CAMERA, UVC
+    const val CAMERA_PID = 195  // 0x00c3
+    const val CAMERA_VID = 1204 // 0x04b4
+
     // AUDIO
-    const val AUDIO_PID = 22529
-    const val AUDIO_VID = 1156
+    const val AUDIO_PID = 22529 // 0x5801
+    const val AUDIO_VID = 1156  // 0x0484
 
     // IDs for the HID interfaces
-    const val HID_VIEWER_CONTROL = 0
-    const val HID_SENSOR = 1
-    const val HID_VIEWER_KEYBOARD = 2
+    const val HID_VIEWER_CONTROL_INTERFACE = 0
+    const val HID_SENSOR_INTERFACE = 1
+    const val HID_TOUCHPAD_INTERFACE = 1
 
     // IDs for HID endpoints
     const val HID_VIEWER_CONTROL_INBOUND = 1
     const val HID_VIEWER_CONTROL_OUTBOUND = 0
-    const val HID_VIEWER_KEYBOARD_INBOUND = 0
     const val HID_SENSOR_INBOUND = 0
 
-    // IDs for the Video Interfaces
-    const val VIDEO_CONTROL = 0
-    const val VIDEO_STREAM = 1
-    const val VIDEO_HID = 2
+    // IDs for the CAMERA Interfaces
+    const val CAMERA_CONTROL = 0
+    const val CAMERA_STREAM = 1
+    const val CAMERA_HID = 2
 
     // IDs for Video Endpoints
     const val VIDEO_CONTROL_ENDPOINT_ONE = 0
@@ -93,3 +99,6 @@ object M400cConstants {
     const val KEY_MIDDLE_LONG = 108 // Move Down
     const val KEY_SIDE = 57 // Unknown
 }
+
+
+
