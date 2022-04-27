@@ -297,7 +297,6 @@ data class Version(val majorUSB: Int,
                            val tracker_SWversion: Int){
     override fun toString(): String {
         return "VERSION: $subsys_HWversion, USB: $majorUSB.$minorUSB, MCU_HW: $tracker_HWversion, MCU_SW:$tracker_SWversion"
-        return super.toString()
     }
 }
 
