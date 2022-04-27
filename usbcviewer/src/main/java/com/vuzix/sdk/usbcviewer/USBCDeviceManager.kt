@@ -72,6 +72,9 @@ class USBCDeviceManager private constructor(context: Context) {
     private var _mainControlUsbDevice: UsbDevice? = null
     val mainControlUsbDevice: UsbDevice?
         get() {
+            if (!isDeviceAvailable()) {
+                return null
+            }
             if (_mainControlUsbDevice != null) {
                 return _mainControlUsbDevice
             }
@@ -86,6 +89,9 @@ class USBCDeviceManager private constructor(context: Context) {
     private var _touchPadUsbDevice: UsbDevice? = null
     val touchPadUsbDevice: UsbDevice?
         get() {
+            if (!isDeviceAvailable()) {
+                return null
+            }
             if (_touchPadUsbDevice != null) {
                 return _touchPadUsbDevice
             }
@@ -100,6 +106,9 @@ class USBCDeviceManager private constructor(context: Context) {
     private var _cameraUsbDevice: UsbDevice? = null
     val cameraUsbDevice: UsbDevice?
         get() {
+            if (!isDeviceAvailable()) {
+                return null
+            }
             if (_cameraUsbDevice != null) {
                 return _cameraUsbDevice
             }
@@ -117,6 +126,9 @@ class USBCDeviceManager private constructor(context: Context) {
     private var _cameraInterface: CameraInterface? = null
     val cameraInterface: CameraInterface?
         get() {
+            if (!isDeviceAvailable()) {
+                return null
+            }
             if (_cameraInterface != null) {
                 return _cameraInterface
             }
@@ -134,6 +146,9 @@ class USBCDeviceManager private constructor(context: Context) {
     private var _deviceControlInterface: DeviceControlInterface? = null
     val deviceControlInterface: DeviceControlInterface?
         get() {
+            if (!isDeviceAvailable()) {
+                return null
+            }
             if (_deviceControlInterface != null) {
                 return _deviceControlInterface
             }
@@ -151,6 +166,9 @@ class USBCDeviceManager private constructor(context: Context) {
     private var _sensorInterface: SensorInterface? = null
     val sensorInterface: SensorInterface?
         get() {
+            if (!isDeviceAvailable()) {
+                return null
+            }
             if (_sensorInterface != null) {
                 return _sensorInterface
             }
@@ -168,6 +186,9 @@ class USBCDeviceManager private constructor(context: Context) {
     private var _touchPadInterface: TouchPadInterface? = null
     val touchPadInterface: TouchPadInterface?
         get() {
+            if (!isDeviceAvailable()) {
+                return null
+            }
             if (_touchPadInterface != null) {
                 return _touchPadInterface
             }
@@ -237,7 +258,8 @@ class USBCDeviceManager private constructor(context: Context) {
             val device = intent.getParcelableExtra<UsbDevice>(UsbManager.EXTRA_DEVICE)
             LogUtil.debug("Got ${intent.action} for $device")
             if ((device?.productId == M400cConstants.VIEWER_PID && device?.vendorId == M400cConstants.VIEWER_VID) ||
-                (device?.productId == M400cConstants.CAMERA_PID && device?.vendorId == M400cConstants.CAMERA_VID)) {
+                (device?.productId == M400cConstants.CAMERA_PID && device?.vendorId == M400cConstants.CAMERA_VID) ||
+                (device?.productId == M400cConstants.HID_TOUCHPAD_PID && device?.vendorId == M400cConstants.HID_TOUCHPAD_VID)) {
                 val connected = (UsbManager.ACTION_USB_DEVICE_ATTACHED == intent.action)
                 LogUtil.debug(" ${device?.productId} ${device?.vendorId} connected = $connected")
                 if(connected) {
@@ -258,9 +280,11 @@ class USBCDeviceManager private constructor(context: Context) {
         _cameraInterface = null
         _sensorInterface = null
         _deviceControlInterface = null
+        _touchPadInterface = null
 
         _cameraUsbDevice = null
         _mainControlUsbDevice = null
+        _touchPadUsbDevice = null
     }
 
     /**
@@ -274,6 +298,7 @@ class USBCDeviceManager private constructor(context: Context) {
             if (d.productId == M400cConstants.VIEWER_PID && d.vendorId == M400cConstants.VIEWER_VID)
                 return true
         }
+        reset()
         return false
     }
 
