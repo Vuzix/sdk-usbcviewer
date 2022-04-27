@@ -112,6 +112,7 @@ class SensorInterface(usbManager: UsbManager, device: UsbDevice, usbInterface: U
     Param: reporting rate is in milliseconds and is at best.
     Listen for updates on VuzixSensorListener.onSensorChanged
      */
+    @JvmOverloads
     @Throws(Exception::class)
     fun startUpdatingSensor(sensor: SensorType, reportingRate: Long = 4) {
         if (listeners.size == 0) {

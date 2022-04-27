@@ -33,6 +33,8 @@
 package com.vuzix.sdk.usbcviewer
 
 
+import android.Manifest
+import android.app.Activity
 import android.app.PendingIntent
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -41,6 +43,8 @@ import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.hardware.usb.UsbDevice
 import android.hardware.usb.UsbManager
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
 import com.vuzix.sdk.usbcviewer.utils.LogUtil
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
@@ -50,7 +54,14 @@ import java.lang.ref.WeakReference
 
 class USBCDeviceManager private constructor(context: Context) {
 
-    companion object : SingletonHolder<USBCDeviceManager, Context>(::USBCDeviceManager)
+    companion object : SingletonHolder<USBCDeviceManager, Context>(::USBCDeviceManager) {
+        @JvmStatic fun shared(arg: Context): USBCDeviceManager {
+            return _shared(arg)
+        }
+        @JvmStatic fun shared(): USBCDeviceManager? {
+            return _shared()
+        }
+    }
 
     private var context: WeakReference<Context> = WeakReference(context)
 
@@ -64,8 +75,9 @@ class USBCDeviceManager private constructor(context: Context) {
             if (_mainControlUsbDevice != null) {
                 return _mainControlUsbDevice
             }
-            if (checkPermissions()) {
-                _mainControlUsbDevice = getDevice(M400cConstants.VIEWER_VID, M400cConstants.VIEWER_PID)
+            val device = getDevice(M400cConstants.VIEWER_VID, M400cConstants.VIEWER_PID)
+            if (checkPermission(device)) {
+                _mainControlUsbDevice = device
                 return _mainControlUsbDevice
             }
             return null
@@ -77,8 +89,9 @@ class USBCDeviceManager private constructor(context: Context) {
             if (_touchPadUsbDevice != null) {
                 return _touchPadUsbDevice
             }
-            if (checkPermissions()) {
-                _touchPadUsbDevice = getDevice(M400cConstants.HID_TOUCHPAD_VID, M400cConstants.HID_TOUCHPAD_PID)
+            val device = getDevice(M400cConstants.HID_TOUCHPAD_VID, M400cConstants.HID_TOUCHPAD_PID)
+            if (checkPermission(device)) {
+                _touchPadUsbDevice = device
                 return _touchPadUsbDevice
             }
             return null
@@ -90,8 +103,9 @@ class USBCDeviceManager private constructor(context: Context) {
             if (_cameraUsbDevice != null) {
                 return _cameraUsbDevice
             }
-            if (checkPermissions()) {
-                _cameraUsbDevice = getDevice(M400cConstants.CAMERA_VID, M400cConstants.CAMERA_PID)
+            val device = getDevice(M400cConstants.CAMERA_VID, M400cConstants.CAMERA_PID)
+            if (checkPermission(device)) {
+                _cameraUsbDevice = device
                 return _cameraUsbDevice
             }
             return null
@@ -103,15 +117,12 @@ class USBCDeviceManager private constructor(context: Context) {
     private var _cameraInterface: CameraInterface? = null
     val cameraInterface: CameraInterface?
         get() {
-            if (usbManager == null) {
-                return null
-            }
             if (_cameraInterface != null) {
                 return _cameraInterface
             }
             cameraUsbDevice?.let { device ->
                 val usbInterface = device.getInterface(M400cConstants.CAMERA_HID)
-                _cameraInterface = CameraInterface(usbManager!!, device, usbInterface)
+                _cameraInterface = CameraInterface(usbManager, device, usbInterface)
                 return _cameraInterface
             }
             return null
@@ -123,15 +134,12 @@ class USBCDeviceManager private constructor(context: Context) {
     private var _deviceControlInterface: DeviceControlInterface? = null
     val deviceControlInterface: DeviceControlInterface?
         get() {
-            if (usbManager == null) {
-                return null
-            }
             if (_deviceControlInterface != null) {
                 return _deviceControlInterface
             }
             mainControlUsbDevice?.let { device ->
                 val usbInterface = device.getInterface(M400cConstants.HID_VIEWER_CONTROL_INTERFACE)
-                _deviceControlInterface = DeviceControlInterface(usbManager!!, device, usbInterface)
+                _deviceControlInterface = DeviceControlInterface(usbManager, device, usbInterface)
                 return _deviceControlInterface
             }
             return null
@@ -143,15 +151,12 @@ class USBCDeviceManager private constructor(context: Context) {
     private var _sensorInterface: SensorInterface? = null
     val sensorInterface: SensorInterface?
         get() {
-            if (usbManager == null) {
-                return null
-            }
             if (_sensorInterface != null) {
                 return _sensorInterface
             }
             mainControlUsbDevice?.let { device ->
                 val usbInterface = device.getInterface(M400cConstants.HID_SENSOR_INTERFACE)
-                _sensorInterface = SensorInterface(usbManager!!, device, usbInterface)
+                _sensorInterface = SensorInterface(usbManager, device, usbInterface)
                 return _sensorInterface
             }
             return null
@@ -163,15 +168,12 @@ class USBCDeviceManager private constructor(context: Context) {
     private var _touchPadInterface: TouchPadInterface? = null
     val touchPadInterface: TouchPadInterface?
         get() {
-            if (usbManager == null) {
-                return null
-            }
             if (_touchPadInterface != null) {
                 return _touchPadInterface
             }
             touchPadUsbDevice?.let { device ->
                 val usbInterface = device.getInterface(M400cConstants.HID_TOUCHPAD_INTERFACE)
-                _touchPadInterface = TouchPadInterface(usbManager!!, device, usbInterface)
+                _touchPadInterface = TouchPadInterface(usbManager, device, usbInterface)
                 return _touchPadInterface
             }
             return null
@@ -187,22 +189,14 @@ class USBCDeviceManager private constructor(context: Context) {
      *
      * @param ConnectionListener - callback for alerting of changes
      *
-     * @return True if USB device is available and permissions are granted
      */
-    open fun registerDeviceMonitor( connectionListener: ConnectionListener ) : Boolean {
+    fun registerDeviceMonitor( connectionListener: ConnectionListener ) {
         this.connectionListener = connectionListener
 
         val filter = IntentFilter(UsbManager.ACTION_USB_DEVICE_ATTACHED)
         filter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED)
         context.get()?.registerReceiver(mConnectDisconnectReceiver, filter)
-        val usbDevice = mainControlUsbDevice
-        if( usbDevice != null && isDeviceAvailable() ) {
-            val granted = checkPermission(usbDevice)
-            LogUtil.debug("Registered attach/detach listener while attached, granted=$granted")
-            return granted
-        }
-        LogUtil.debug("Registered attach/detach listener while not attached")
-        return false
+        LogUtil.debug("Registered attach/detach listener")
     }
 
     /**
@@ -210,7 +204,7 @@ class USBCDeviceManager private constructor(context: Context) {
      *
      * @see registerDeviceMonitor
      */
-    open fun unregisterDeviceMonitor() {
+    fun unregisterDeviceMonitor() {
         if(connectionListener != null) {
             LogUtil.debug("Unregistering attach/detach listener")
             context.get()?.unregisterReceiver(mConnectDisconnectReceiver)
@@ -275,9 +269,12 @@ class USBCDeviceManager private constructor(context: Context) {
      * @return True if available
      */
     open fun isDeviceAvailable(): Boolean {
-        val available = mainControlUsbDevice?.let { isDeviceConnected(it) }
-        LogUtil.debug("Available = $available")
-        return available == true
+        val connectedDevices = usbManager.deviceList
+        for (d in connectedDevices.values) {
+            if (d.productId == M400cConstants.VIEWER_PID && d.vendorId == M400cConstants.VIEWER_VID)
+                return true
+        }
+        return false
     }
 
     private fun isDeviceConnected(device: UsbDevice): Boolean {
@@ -293,11 +290,6 @@ class USBCDeviceManager private constructor(context: Context) {
         return false
     }
 
-
-    open fun hasPermissionsBeenGranted(): Boolean {
-        if (mainControlUsbDevice == null) return false
-        return usbManager.hasPermission(mainControlUsbDevice)
-    }
 
     private fun getDevice(vendorId: Int, productId: Int): UsbDevice? {
         if (usbManager == null) return null
@@ -318,21 +310,26 @@ class USBCDeviceManager private constructor(context: Context) {
         return usbDevice
     }
 
-    open fun checkPermissions(): Boolean {
-        val devices = usbManager.deviceList.values.toList()
-
-        var result = true
-        for (i in devices.indices) {
-            result = result && checkPermission(devices[i])
-        }
-        return result
-    }
-
 
     private fun checkPermission(usbDevice: UsbDevice?) : Boolean {
-        // The context will exist until the calling app is garbage collected, so it's OK
-        // to assert here if it is null. Nobody should be calling this function by then
         var context = this.context.get() ?: return false
+
+        // if camera, they need user permissions first
+        if (usbDevice?.vendorId == M400cConstants.CAMERA_VID && usbDevice?.productId == M400cConstants.CAMERA_PID) {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED &&
+                ContextCompat.checkSelfPermission(
+                    context,
+                    Manifest.permission.RECORD_AUDIO
+                ) != PackageManager.PERMISSION_GRANTED
+            ) {
+                if (context is Activity) {
+                ActivityCompat.requestPermissions(context,
+                    arrayOf(Manifest.permission.CAMERA, Manifest.permission.RECORD_AUDIO),
+                    0
+                )}
+                return false
+            }
+        }
 
         if(!context.packageManager.hasSystemFeature(PackageManager.FEATURE_USB_HOST)) {
             throw Exception("App does not have FEATURE_USB_HOST")
@@ -385,11 +382,12 @@ class USBCDeviceManager private constructor(context: Context) {
     }
 }
 
+
 open class SingletonHolder<out T: Any, in A>(creator: (A) -> T) {
     private var creator: ((A) -> T)? = creator
     @Volatile private var instance: T? = null
 
-    fun shared(arg: A): T {
+    internal fun _shared(arg: A): T {
         val checkInstance = instance
         if (checkInstance != null) {
             return checkInstance
@@ -408,7 +406,7 @@ open class SingletonHolder<out T: Any, in A>(creator: (A) -> T) {
         }
     }
 
-    fun shared(): T? {
+    internal fun _shared(): T? {
         val checkInstance = instance
         if (checkInstance != null) {
             return checkInstance

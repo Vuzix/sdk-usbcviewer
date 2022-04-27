@@ -102,6 +102,7 @@ open class USBCDeviceInterface(private val usbManager: UsbManager, val device: U
     }
 
     // Simple set property command, it will determine how to send
+    @JvmOverloads
     fun set(command: Int, value:ByteArray?): ByteArray {
         if (inEndpoint != null && outEndpoint != null) {
             return sendPayload(command, value)
@@ -213,6 +214,7 @@ open class USBCDeviceInterface(private val usbManager: UsbManager, val device: U
     }
 
     // Sends data over the outgoing end point and reads back over the incoming end point.
+    @JvmOverloads
     fun sendPayload(command: Int, payload: ByteArray?): ByteArray {
         if (!connected) {
             throw Exception("Device is not connected")
