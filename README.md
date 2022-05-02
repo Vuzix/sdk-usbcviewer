@@ -40,7 +40,7 @@ dependencies if not already included:
 
 ```
 dependencies {
-  implementation 'com.vuzix:sdk-usbcviewer:0.0.4'
+  implementation 'com.vuzix:sdk-usbcviewer:1.0.0'
   implementation "androidx.core:core-ktx:1.7.0"
   implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.5.2"
 }
@@ -185,6 +185,9 @@ The Touchpad interface is `USBCDeviceManager.shared(context).touchpadInterface`.
 You can disable/enable the touchpad with `USBCDeviceManager.shared(context).touchpadInterface?.setTouchPadEnabled(true/false)`.
 You can swap the horizontal, vertical, pan, scroll and zoom directions by calling:
 `USBCDeviceManager.shared(context).touchpadInterface?.setTouchPadOrientation(<TouchPadSettings>)`  and passing in a TouchPadSettings object.
+
+### UVC Camera
+The best way for Android to handle an external UVC camera is with an external C library called [libUVC](https://github.com/libuvc/libuvc). We have demo'd the UVC camera in an unrooted Android phone using the open source Android library [UVCCamera](https://github.com/saki4510t/UVCCamera).  UVCCamera wraps libUVC and exposes it to Android. In our testing it does show the camera stream and you can control the camera. We did find a few bugs using this version, so your milage may vary.  
 
 ## Technical Support
 Developers that own Vuzix USB-C viewer hardware may direct integration questions to
