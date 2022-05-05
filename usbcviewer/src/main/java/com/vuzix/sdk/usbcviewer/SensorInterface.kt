@@ -56,7 +56,6 @@ class SensorInterface(usbManager: UsbManager, device: UsbDevice, usbInterface: U
     private var smooth: Boolean = false
     private var MAX_RETRIES = 3
     private var usbReaderJob: Job? = null
-    private var sensorJob: Job? = null
 
     private val sensorHandlerThread = HandlerThread("com.vuzix.sensor_interface")
 
@@ -107,14 +106,22 @@ class SensorInterface(usbManager: UsbManager, device: UsbDevice, usbInterface: U
         }
     }
 
-    /*
+    /**
     Starts updating the sensor.
     Param: reporting rate is in milliseconds and is at best.
     Listen for updates on VuzixSensorListener.onSensorChanged
+
+    @param sensor the integer sensor type from android.hardware.Sensor of
+        TYPE_MAGNETIC_FIELD, TYPE_ACCELEROMETER, TYPE_GYROSCOPE, TYPE_ROTATION_VECTOR
+    @param reportingRate maximum rate for receiving updates in milliseconds (optional) default: 4ms
      */
     @JvmOverloads
     @Throws(Exception::class)
-    fun startUpdatingSensor(sensor: SensorType, reportingRate: Long = 4) {
+    fun startUpdatingSensor(sensor: Int, reportingRate: Long = 4) {
+        startUpdatingSensor(androidToSensorType(sensor), reportingRate)
+    }
+
+    private fun startUpdatingSensor(sensor: SensorType, reportingRate: Long) {
         if (listeners.size == 0) {
             throw Exception("No listeners. Must have at least one listener: call first addListener()")
         }
@@ -125,7 +132,6 @@ class SensorInterface(usbManager: UsbManager, device: UsbDevice, usbInterface: U
             sensorHandlerThread.start()
             sensorHandler = Handler(sensorHandlerThread.looper)
         }
-
 
         val runnable = java.lang.Runnable {
 
@@ -165,7 +171,11 @@ class SensorInterface(usbManager: UsbManager, device: UsbDevice, usbInterface: U
     /*
     Stops updating the sensor
      */
-    fun stopUpdatingSensor(sensor: SensorType) {
+    fun stopUpdatingSensor(sensor: Int) {
+        stopUpdatingSensor(androidToSensorType(sensor))
+    }
+
+    private fun stopUpdatingSensor(sensor: SensorType) {
         coroutineScope.launch {
             val status = setSensorState(sensor.value, false, 4)
             // check to see if we are streaming and cancel if nothing is listening.
@@ -295,14 +305,17 @@ class SensorInterface(usbManager: UsbManager, device: UsbDevice, usbInterface: U
      */
     private fun createSensorEvent(byteArray: ByteArray): VuzixSensorEvent {
         val reportId = byteArray[0]
-        val sensorState = byteArray[1] // Used for debug purposes
-        val sensorEvent = byteArray[2] // Used for debug purposes
+        //val sensorState = byteArray[1] // Used for debug purposes
+        //val sensorEvent = byteArray[2] // Used for debug purposes
         val deviceXData: Short = bytesToShort(byteArray[4], byteArray[3])
         val deviceYData: Short = bytesToShort(byteArray[6], byteArray[5])
         val deviceZData: Short = bytesToShort(byteArray[8], byteArray[7])
 
-        return when (reportId.toInt()) {
-            SensorType.ACCELEROMETER.value -> {
+        val sensorType = SensorType.fromInt(reportId.toInt())
+            ?: throw Exception("Unknown Sensor Type Detected: ${byteArray[0]}")
+
+        return when (sensorType) {
+            SensorType.ACCELEROMETER -> {
                 // LogUtil.debug("Accelerometer: ID=${reportId} state=${sensorState} event=${sensorEvent} X=${deviceXData},Y=${deviceYData},Z=${deviceZData}")
                 // Device X+ is towards power button; Y+ is toward camera; Z+ towards nav buttons
                 val accel = floatArrayOf(
@@ -312,13 +325,13 @@ class SensorInterface(usbManager: UsbManager, device: UsbDevice, usbInterface: U
                 )
                 if (smooth) {
                     val accelAvg = floatArrayOf(0f, 0f, 0f)
-                    smoothSensorData(accel, accelAvg, SensorType.ACCELEROMETER.value)
-                    VuzixSensorEvent(Sensor.TYPE_ACCELEROMETER, accelAvg)
+                    smoothSensorData(accel, accelAvg, SensorType.ACCELEROMETER)
+                    VuzixSensorEvent(sensorTypeToAndroid(sensorType), accelAvg)
                 } else {
-                    VuzixSensorEvent(Sensor.TYPE_ACCELEROMETER, accel)
+                    VuzixSensorEvent(sensorTypeToAndroid(sensorType), accel)
                 }
             }
-            SensorType.GYRO.value -> {
+            SensorType.GYRO -> {
                 // LogUtil.debug("Gyro: ID=${reportId} state=${sensorState} event=${sensorEvent} X=${deviceXData},Y=${deviceYData},Z=${deviceZData}")
                 // Device X+ is towards power button; Y+ is toward camera; Z+ towards nav buttons
                 val gyroData = floatArrayOf(
@@ -328,14 +341,14 @@ class SensorInterface(usbManager: UsbManager, device: UsbDevice, usbInterface: U
                 )
                 if (smooth) {
                     val gyroAvg = floatArrayOf(0f, 0f, 0f)
-                    smoothSensorData(gyroData, gyroAvg, SensorType.GYRO.value)
-                    VuzixSensorEvent(Sensor.TYPE_GYROSCOPE, gyroAvg)
+                    smoothSensorData(gyroData, gyroAvg, SensorType.GYRO)
+                    VuzixSensorEvent( sensorTypeToAndroid(sensorType), gyroAvg)
                 } else {
-                    VuzixSensorEvent(Sensor.TYPE_GYROSCOPE, gyroData)
+                    VuzixSensorEvent(sensorTypeToAndroid(sensorType), gyroData)
                 }
             }
-            SensorType.MAGNETOMETER.value -> {
-                val deviceAccuracy: Byte = byteArray[9] // Used for debug purposes
+            SensorType.MAGNETOMETER -> {
+                // val deviceAccuracy: Byte = byteArray[9] // Used for debug purposes
                 // LogUtil.debug("Magnetometer: ID=${reportId} state=${sensorState} event=${sensorEvent}" +
                 // " X=${deviceXData},Y=${deviceYData},Z=${deviceZData}, Accuracy=${deviceAccuracy}")
                 // Different from orientation! Device X+ is towards power button; Y+ is toward USB; Z+ towards bottom of hinge
@@ -346,22 +359,21 @@ class SensorInterface(usbManager: UsbManager, device: UsbDevice, usbInterface: U
                 )
                 if (smooth) {
                     val magAvg = floatArrayOf(0f, 0f, 0f)
-                    smoothSensorData(magnetometerData, magAvg, SensorType.MAGNETOMETER.value)
-                    VuzixSensorEvent(Sensor.TYPE_MAGNETIC_FIELD, magAvg)
+                    smoothSensorData(magnetometerData, magAvg, SensorType.MAGNETOMETER)
+                    VuzixSensorEvent(sensorTypeToAndroid(sensorType), magAvg)
                 } else {
-                    VuzixSensorEvent(Sensor.TYPE_MAGNETIC_FIELD, magnetometerData)
+                    VuzixSensorEvent(sensorTypeToAndroid(sensorType), magnetometerData)
                 }
             }
-            SensorType.ORIENTATION.value -> {
+            SensorType.ORIENTATION -> {
                 // https://usb.org/sites/default/files/hut1_2.pdf defines the order as X,Y,Z,W
                 val deviceWData: Short = bytesToShort(byteArray[10], byteArray[9])
                 val updatedQuaternion = rotateQuaternionAxes( calculateRotationData(deviceXData),
                     calculateRotationData(deviceYData),
                     calculateRotationData(deviceZData),
                     calculateRotationData(deviceWData) )
-                VuzixSensorEvent(Sensor.TYPE_ROTATION_VECTOR, updatedQuaternion)
+                VuzixSensorEvent(sensorTypeToAndroid(sensorType), updatedQuaternion)
             }
-            else -> throw Exception("Unknown Sensor Type Detected: ${byteArray[0]}")
         }
     }
 
@@ -485,23 +497,23 @@ class SensorInterface(usbManager: UsbManager, device: UsbDevice, usbInterface: U
     }
 
     /** Function to reduce the volatility of the sensor data */
-    private fun smoothSensorData(data: FloatArray, dataAvg: FloatArray, sensorType: Int) {
+    private fun smoothSensorData(data: FloatArray, dataAvg: FloatArray, sensorType: SensorType) {
         val a = floatArrayOf(0f, 0f, 0f)
         val dataIter: Iterator<FloatArray>
         val size: Int = when (sensorType) {
-            SensorType.ACCELEROMETER.value -> {
+            SensorType.ACCELEROMETER -> {
                 accBuffer.pollFirst()
                 accBuffer.addLast(data)
                 dataIter = accBuffer.iterator()
                 accBuffer.size
             }
-            SensorType.MAGNETOMETER.value -> {
+            SensorType.MAGNETOMETER -> {
                 magBuffer.pollFirst()
                 magBuffer.addLast(data)
                 dataIter = magBuffer.iterator()
                 magBuffer.size
             }
-            SensorType.GYRO.value -> {
+            SensorType.GYRO -> {
                 gyroBuffer.pollFirst()
                 gyroBuffer.addLast(data)
                 dataIter = gyroBuffer.iterator()
@@ -524,11 +536,37 @@ class SensorInterface(usbManager: UsbManager, device: UsbDevice, usbInterface: U
     private fun bytesToShort(msb: Byte, lsb: Byte): Short {
         return ((msb.toInt() shl 8) or (lsb.toInt() and 0xFF)).toShort()
     }
-}
 
-enum class SensorType(val value: Int) {
-    ACCELEROMETER(1),   // kSENSOR_Accelerometer, 1
-    GYRO(2),            // kSENSOR_Gyro, 2
-    MAGNETOMETER(3),    // kSENSOR_Magnetometer, 3
-    ORIENTATION(4);     // kSENSOR_DeviceOrientation, 4
+    // This is an internal enumeration that must match the M400C USB interface.
+    // It is not how Android devices will reference the sensors, so we keep private.
+    // Externally we use android.hardware.Sensor values
+    private enum class SensorType(val value: Int) {
+        ACCELEROMETER(1),   // kSENSOR_Accelerometer, 1
+        GYRO(2),            // kSENSOR_Gyro, 2
+        MAGNETOMETER(3),    // kSENSOR_Magnetometer, 3
+        ORIENTATION(4);     // kSENSOR_DeviceOrientation, 4
+
+        companion object {
+            fun fromInt(value: Int) = values().firstOrNull { it.value == value }
+        }
+    }
+
+    private fun androidToSensorType(sensorAndroidInt : Int) : SensorType {
+        return when(sensorAndroidInt) {
+            Sensor.TYPE_MAGNETIC_FIELD -> SensorType.MAGNETOMETER
+            Sensor.TYPE_ACCELEROMETER -> SensorType.ACCELEROMETER
+            Sensor.TYPE_GYROSCOPE -> SensorType.GYRO
+            Sensor.TYPE_ROTATION_VECTOR -> SensorType.ORIENTATION
+            else -> throw Exception("Unsupported sensor requested: $sensorAndroidInt")
+        }
+    }
+
+    private fun sensorTypeToAndroid(sensorType : SensorType) : Int {
+        return when(sensorType) {
+            SensorType.MAGNETOMETER -> Sensor.TYPE_MAGNETIC_FIELD
+            SensorType.ACCELEROMETER -> Sensor.TYPE_ACCELEROMETER
+            SensorType.GYRO -> Sensor.TYPE_GYROSCOPE
+            SensorType.ORIENTATION -> Sensor.TYPE_ROTATION_VECTOR
+        }
+    }
 }
