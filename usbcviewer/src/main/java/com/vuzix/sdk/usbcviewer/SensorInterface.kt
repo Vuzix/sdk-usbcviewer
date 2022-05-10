@@ -203,8 +203,10 @@ class SensorInterface(usbManager: UsbManager, device: UsbDevice, usbInterface: U
             return false
         }
         val action = if (useSensor) "Initializing" else "De-initializing"
-        if ((!useSensor) && (!sensorInitTrackingList.contains(sensor))) {
-            // Nothing to do. We're stopping a sensor we never started.
+        val sensorCurrentlyRunning = sensorInitTrackingList.contains(sensor)
+        if (useSensor == sensorCurrentlyRunning) {
+            // Nothing to do. We're stopping a sensor we never started, or we're starting one again
+            LogUtil.debug("$action not required for $sensor")
             return true
         }
         LogUtil.debug("$action sensor $sensor")
@@ -219,13 +221,12 @@ class SensorInterface(usbManager: UsbManager, device: UsbDevice, usbInterface: U
                     val readBackOk = (requestBytes.copyOfRange(0, lastByteToReadBack)
                         .contentEquals(incomingBytes.copyOfRange(0, lastByteToReadBack)))
                     if (readBackOk) {
-                        return if (useSensor) {
-                            true
+                        if (useSensor) {
+                            sensorInitTrackingList.add(sensor)
                         } else {
-                            // Not using the sensor, we're done
                             sensorInitTrackingList.remove(sensor)
-                            true
                         }
+                        return true
                     }
                     LogUtil.rel("Read-back verification failure sensor $sensor")
                     LogUtil.debug(
@@ -320,8 +321,8 @@ class SensorInterface(usbManager: UsbManager, device: UsbDevice, usbInterface: U
                 // Device X+ is towards power button; Y+ is toward camera; Z+ towards nav buttons
                 val accel = floatArrayOf(
                     calculateAccelData((-deviceXData).toShort()),
-                    calculateAccelData((-deviceZData).toShort()),
-                    calculateAccelData((deviceYData))
+                    calculateAccelData(deviceZData),
+                    calculateAccelData((-deviceYData).toShort())
                 )
                 if (smooth) {
                     val accelAvg = floatArrayOf(0f, 0f, 0f)
@@ -336,8 +337,8 @@ class SensorInterface(usbManager: UsbManager, device: UsbDevice, usbInterface: U
                 // Device X+ is towards power button; Y+ is toward camera; Z+ towards nav buttons
                 val gyroData = floatArrayOf(
                     calculateGyroData((deviceXData)),
-                    calculateGyroData((deviceZData)),
-                    calculateGyroData((-deviceYData).toShort())
+                    calculateGyroData((-deviceZData).toShort()),
+                    calculateGyroData((deviceYData))
                 )
                 if (smooth) {
                     val gyroAvg = floatArrayOf(0f, 0f, 0f)
@@ -354,8 +355,8 @@ class SensorInterface(usbManager: UsbManager, device: UsbDevice, usbInterface: U
                 // Different from orientation! Device X+ is towards power button; Y+ is toward USB; Z+ towards bottom of hinge
                 val magnetometerData = floatArrayOf(
                     calculateMagnetometerData((deviceXData)),
-                    calculateMagnetometerData((deviceZData)),
-                    calculateMagnetometerData((deviceYData))
+                    calculateMagnetometerData((-deviceZData).toShort()),
+                    calculateMagnetometerData((-deviceYData).toShort())
                 )
                 if (smooth) {
                     val magAvg = floatArrayOf(0f, 0f, 0f)
@@ -436,9 +437,10 @@ class SensorInterface(usbManager: UsbManager, device: UsbDevice, usbInterface: U
         // https://stackoverflow.com/questions/4436764/rotating-a-quaternion-on-1-axis
         // Device X+ is towards power button; Y+ is toward camera; Z+ towards nav buttons
         // So rotate the reported data 90 degrees around X and the axes move appropriately
-        val sensorQuaternion: Quaternion = Quaternion(x_val, y_val, z_val, w_val)
-        val manipulationQuaternion = Quaternion.axisAngle(1.0f, 0.0f, 0.0f, 90.0f)
-        val axisRemappedData = Quaternion.multiply(sensorQuaternion, manipulationQuaternion)
+        //val sensorQuaternion: Quaternion = Quaternion(x_val, y_val, z_val, w_val)
+        //val manipulationQuaternion = Quaternion.axisAngle(1.0f, 0.0f, 0.0f, 90.0f)
+        //val axisRemappedData = Quaternion.multiply(sensorQuaternion, manipulationQuaternion)
+        val axisRemappedData: Quaternion = Quaternion(-z_val, -x_val, y_val, w_val)
         val rotationData = floatArrayOf(
             axisRemappedData.x,
             axisRemappedData.y,
