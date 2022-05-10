@@ -40,6 +40,7 @@ import java.util.regex.Pattern
  * This object class is used to log messages within the SDK.
  */
 object LogUtil {
+    private val COMMON_TAG = "VzxUsbc"
 
     private const val MAX_TAG_LENGTH = 23
     private val ANONYMOUS_CLASS = Pattern.compile("(\\$\\d+)+$")
@@ -54,6 +55,7 @@ object LogUtil {
         if (m.find()) {
             tag = m.replaceAll("")
         }
+        tag = "$COMMON_TAG$tag"
         // Tag length limit was removed in API 26.
         return if (tag.length <= MAX_TAG_LENGTH) {
             tag
