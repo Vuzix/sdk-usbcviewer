@@ -437,10 +437,9 @@ class SensorInterface(usbManager: UsbManager, device: UsbDevice, usbInterface: U
         // https://stackoverflow.com/questions/4436764/rotating-a-quaternion-on-1-axis
         // Device X+ is towards power button; Y+ is toward camera; Z+ towards nav buttons
         // So rotate the reported data 90 degrees around X and the axes move appropriately
-        //val sensorQuaternion: Quaternion = Quaternion(x_val, y_val, z_val, w_val)
-        //val manipulationQuaternion = Quaternion.axisAngle(1.0f, 0.0f, 0.0f, 90.0f)
-        //val axisRemappedData = Quaternion.multiply(sensorQuaternion, manipulationQuaternion)
-        val axisRemappedData: Quaternion = Quaternion(-z_val, -x_val, y_val, w_val)
+        val sensorQuaternion: Quaternion = Quaternion(x_val, y_val, z_val, w_val)
+        val manipulationQuaternion = Quaternion.axisAngle(-1.0f, 0.0f, 0.0f, 90.0f)
+        val axisRemappedData = Quaternion.multiply(sensorQuaternion, manipulationQuaternion)
         val rotationData = floatArrayOf(
             axisRemappedData.x,
             axisRemappedData.y,
