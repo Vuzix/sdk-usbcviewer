@@ -170,8 +170,13 @@ class DeviceControlInterface(usbManager: UsbManager, device: UsbDevice, usbInter
         longPressAndroidKeyCode: Int
     ): Boolean {
         val shortCode = HIDKeyCodes.toHID(shortPressAndroidKeyCode)
+        if (shortCode == null){
+            LogUtil.rel("Cannot map short code $shortPressAndroidKeyCode")
+            return false
+        }
         val longCode = HIDKeyCodes.toHID(longPressAndroidKeyCode)
-        if (shortCode == null || longCode == null) {
+        if (longCode == null){
+            LogUtil.rel("Cannot map long code $longPressAndroidKeyCode")
             return false
         }
 
