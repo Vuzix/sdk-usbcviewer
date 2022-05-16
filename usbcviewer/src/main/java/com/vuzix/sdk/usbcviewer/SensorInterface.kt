@@ -112,12 +112,13 @@ class SensorInterface(usbManager: UsbManager, device: UsbDevice, usbInterface: U
     Listen for updates on VuzixSensorListener.onSensorChanged
 
     @param sensor the integer sensor type from android.hardware.Sensor of
-        TYPE_MAGNETIC_FIELD, TYPE_ACCELEROMETER, TYPE_GYROSCOPE, TYPE_ROTATION_VECTOR
+        TYPE_MAGNETIC_FIELD, TYPE_ACCELEROMETER, TYPE_GYROSCOPE
     @param reportingRate maximum rate for receiving updates in milliseconds (optional) default: 4ms
      */
     @JvmOverloads
     @Throws(Exception::class)
     fun startUpdatingSensor(sensor: Int, reportingRate: Long = 4) {
+        // TODO Add TYPE_ROTATION_VECTOR to javadocs once we implement rotateQuaternionAxes()
         startUpdatingSensor(androidToSensorType(sensor), reportingRate)
     }
 
@@ -439,6 +440,9 @@ class SensorInterface(usbManager: UsbManager, device: UsbDevice, usbInterface: U
         // So rotate the reported data 90 degrees around X and the axes move appropriately
         val sensorQuaternion: Quaternion = Quaternion(x_val, y_val, z_val, w_val)
         val manipulationQuaternion = Quaternion.axisAngle(-1.0f, 0.0f, 0.0f, 90.0f)
+        // TODO When we convert this data back using SensorManager.getOrientation we see the data
+        // is mirrored / reflected on the X axis, so North and South are reversed, but East and West
+        // are correct
         val axisRemappedData = Quaternion.multiply(sensorQuaternion, manipulationQuaternion)
         val rotationData = floatArrayOf(
             axisRemappedData.x,
@@ -557,7 +561,8 @@ class SensorInterface(usbManager: UsbManager, device: UsbDevice, usbInterface: U
             Sensor.TYPE_MAGNETIC_FIELD -> SensorType.MAGNETOMETER
             Sensor.TYPE_ACCELEROMETER -> SensorType.ACCELEROMETER
             Sensor.TYPE_GYROSCOPE -> SensorType.GYRO
-            Sensor.TYPE_ROTATION_VECTOR -> SensorType.ORIENTATION
+            // TODO Add TYPE_ROTATION_VECTOR support once we fix rotateQuaternionAxes()
+            //Sensor.TYPE_ROTATION_VECTOR -> SensorType.ORIENTATION
             else -> throw Exception("Unsupported sensor requested: $sensorAndroidInt")
         }
     }
