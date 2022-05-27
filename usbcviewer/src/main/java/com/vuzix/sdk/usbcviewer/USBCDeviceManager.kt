@@ -465,22 +465,6 @@ class USBCDeviceManager private constructor(_context: Context) {
     private fun printableDevice(device: UsbDevice?): String {
         return "Device ${device?.productName} (${device?.vendorId} ${device?.productId})"
     }
-
-    /*
-    Device-wide set Auto Rotation for the entire device, both Display and Camera
-     */
-    open fun setAutoRotationForDevice(rotation: Rotation) {
-        if (rotation == Rotation.AUTO_ROTATE) {
-            deviceControlInterface?.setAutoRotation(true)
-            cameraInterface?.setAutoRotation(true)
-        }
-        else {
-            deviceControlInterface?.setAutoRotation(false)
-            cameraInterface?.setAutoRotation(false)
-            deviceControlInterface?.setForceLeftEye(rotation == Rotation.LEFT_EYE)
-            cameraInterface?.setForceLeftEye(rotation == Rotation.LEFT_EYE)
-        }
-    }
 }
 
 
