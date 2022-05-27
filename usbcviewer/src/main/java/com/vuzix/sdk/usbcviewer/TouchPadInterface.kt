@@ -43,6 +43,8 @@ import java.util.*
 class TouchPadInterface (usbManager: UsbManager, device: UsbDevice, usbInterface: UsbInterface) : USBCDeviceInterface(usbManager,
     device, usbInterface
 ) {
+    private var _touchpadEnabled = true
+
 
     /*
     Read the orientation of the touchpad sensor.
@@ -86,13 +88,17 @@ class TouchPadInterface (usbManager: UsbManager, device: UsbDevice, usbInterface
     /*
     Is the touchpad enabled?
      */
-    fun getTouchPadEnabled(): Boolean? {
-        val bytes = get(0x73)
-        LogUtil.debug("getTouchPadEnabled: ", bytes, bytes.size)
-        if (bytes.size >= 5) {
-            return bytes[4].toInt().toBoolean()
-        }
-        return null
+    fun getTouchPadEnabled(): Boolean {
+        // TODO: API currently doesn't support this.
+//        val bytes = get(0x73)
+//        LogUtil.debug("getTouchPadEnabled: ", bytes, bytes.size)
+//        if (bytes.size >= 5) {
+//            return bytes[4].toInt().toBoolean()
+//        }
+//        return null
+
+        return _touchpadEnabled
+
     }
 
     /*
@@ -101,8 +107,11 @@ class TouchPadInterface (usbManager: UsbManager, device: UsbDevice, usbInterface
     fun setTouchPadEnabled(value: Boolean): Boolean {
         val bytes = sendPayload(0x73, byteArrayOf(0, 0, value.toInt().toByte()))
         if (bytes.size >= 5 && (bytes[1].toInt() and 0xFF) == 0x73) {
+            _touchpadEnabled = bytes[4].toInt().toBoolean()
+            LogUtil.debug("setTouchpadEnabled: $_touchpadEnabled" )
             return true
         }
+        LogUtil.debug("setTouchpadEnabled: failed" )
         return false
     }
 }
