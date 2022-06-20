@@ -323,7 +323,7 @@ class SensorInterface(usbManager: UsbManager, device: UsbDevice, usbInterface: U
                 val accel = floatArrayOf(
                     calculateAccelData((-deviceXData).toShort()),
                     calculateAccelData(deviceZData),
-                    calculateAccelData((-deviceYData).toShort())
+                    calculateAccelData(deviceYData)
                 )
                 if (smooth) {
                     val accelAvg = floatArrayOf(0f, 0f, 0f)
@@ -355,9 +355,9 @@ class SensorInterface(usbManager: UsbManager, device: UsbDevice, usbInterface: U
                 // " X=${deviceXData},Y=${deviceYData},Z=${deviceZData}, Accuracy=${deviceAccuracy}")
                 // Different from orientation! Device X+ is towards power button; Y+ is toward USB; Z+ towards bottom of hinge
                 val magnetometerData = floatArrayOf(
-                    calculateMagnetometerData((deviceXData)),
+                    calculateMagnetometerData((-deviceXData).toShort()),
                     calculateMagnetometerData((-deviceZData).toShort()),
-                    calculateMagnetometerData((-deviceYData).toShort())
+                    calculateMagnetometerData((deviceYData).toShort())
                 )
                 if (smooth) {
                     val magAvg = floatArrayOf(0f, 0f, 0f)

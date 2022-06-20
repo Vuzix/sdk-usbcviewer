@@ -231,11 +231,6 @@ class USBCDeviceManager private constructor(_context: Context) {
     private fun notifyListener(device: UsbDevice?, newAttachedState: Boolean) {
         if(lastNotifiedState != newAttachedState) {
             lastNotifiedState = newAttachedState
-            if (newAttachedState) {
-                checkPermission(device)
-            } else {
-                reset()
-            }
             checkPermission(device)
             GlobalScope.launch(Dispatchers.Main) {
                 connectionListener?.onConnectionChanged(newAttachedState)
