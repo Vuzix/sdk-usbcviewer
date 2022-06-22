@@ -270,8 +270,8 @@ class SensorInterface(usbManager: UsbManager, device: UsbDevice, usbInterface: U
             )
             // LogUtil.debug("Sensor sent $read bytes: ", bytes, read)
             if (read > 0) {
+                val event = createSensorEvent(bytes.take(read).toByteArray())
                 for (listener in listeners) {
-                    val event = createSensorEvent(bytes.take(read).toByteArray())
                     MainScope().launch {
                         listener.onSensorChanged(event)
                     }
@@ -321,7 +321,7 @@ class SensorInterface(usbManager: UsbManager, device: UsbDevice, usbInterface: U
                 // LogUtil.debug("Accelerometer: ID=${reportId} state=${sensorState} event=${sensorEvent} X=${deviceXData},Y=${deviceYData},Z=${deviceZData}")
                 // Device X+ is towards power button; Y+ is toward camera; Z+ towards nav buttons
                 val accel = floatArrayOf(
-                    calculateAccelData((-deviceXData).toShort()),
+                    calculateAccelData(deviceXData),
                     calculateAccelData(deviceZData),
                     calculateAccelData(deviceYData)
                 )
