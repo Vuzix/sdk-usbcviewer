@@ -40,7 +40,7 @@ dependencies if not already included:
 
 ```
 dependencies {
-  implementation 'com.vuzix:sdk-usbcviewer:1.0.0'
+  implementation 'com.vuzix:sdk-usbcviewer:1.0.1'
   implementation "androidx.core:core-ktx:1.7.0"
   implementation "org.jetbrains.kotlinx:kotlinx-coroutines-android:1.5.2"
 }
