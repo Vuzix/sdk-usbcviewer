@@ -157,7 +157,7 @@ open class CameraInterface(usbManager: UsbManager, device: UsbDevice, usbInterfa
         if (data.size > 2) {
             val mode = parseNoiseReductionMode((data[1].toInt() shr 7) and 1)
             if (mode == NoiseReductionMode.FIXED) {
-                return data[5].toInt()
+                return data[1].toInt() - 0x80
             }
         }
         return null
@@ -186,7 +186,10 @@ open class CameraInterface(usbManager: UsbManager, device: UsbDevice, usbInterfa
     fun getScannerMode(): Boolean? {
         val data = get(254, byteArrayOf(0x06))
         if (data.size > 2) {
-           return data[1].toInt().toBoolean()
+            if (data[1].toInt() == 0x20) {
+                return true
+            }
+            return false
         }
         return null
     }
@@ -245,7 +248,7 @@ open class CameraInterface(usbManager: UsbManager, device: UsbDevice, usbInterfa
         1–255: Gray threshold value
      */
     fun setColorModeToBlackAndWhiteWithThreshold(threshold: Int){
-        require(threshold in 0..255) {"Threshold must be in the range of 0 to 255. 0: auto, 1–255: Gray threshold value"}
+        require(threshold in 1..255) {"Threshold must be in the range of 0 to 255. 0: auto, 1–255: Gray threshold value"}
         val payload = byteArrayOf(ColorMode.BLACK_AND_WHITE.value.toByte(), threshold.toByte())
         set(7, payload)
     }
@@ -329,42 +332,6 @@ open class CameraInterface(usbManager: UsbManager, device: UsbDevice, usbInterfa
         set(14, byteArrayOf(0x01))
     }
 
-    fun getAutoRotation(): Boolean? {
-        val data = get(254, byteArrayOf(86.toByte()))
-        if (data.size >= 2) {
-            return data[1].toInt().toBoolean()
-        }
-        return null
-    }
-
-    /*
-    Set camera auto rotation mode.
-    When enabled, the camera will watch the orientation signal from the main microcontroller and
-    rotate the camera image to match.
-    This will override the Left Eye Mode setting if enabled.
-     */
-    fun setAutoRotation(on: Boolean) {
-        set(86, byteArrayOf(on.toInt().toByte()))
-    }
-
-
-    fun getForceLeftEye(): Boolean? {
-        val data = get(254, byteArrayOf(0x58))
-        if (data.size >= 2) {
-            return data[1].toInt().toBoolean()
-        }
-        return null
-    }
-
-    /*
-    Set left eye mode for the camera. This orients the camera image correctly for left eye use.
-    Only has effect when auto-rotate is false
-     */
-    fun setForceLeftEye(on: Boolean) {
-        // Great Scott!!
-        set(88, byteArrayOf(on.toInt().toByte()))
-    }
-
     /*
     returns the default values of the device.
      */
@@ -384,27 +351,26 @@ open class CameraInterface(usbManager: UsbManager, device: UsbDevice, usbInterfa
     }
 
     private fun parseCameraValues(data: ByteArray): CameraValues? {
-        if (data.size >= 13 && data[0].toInt() == 11) {  // TODO:  only 11, what about vuzix defaults.
+        if (data.size >= 12) {
             val exposure = parseExposure(data[1].toInt())
             val priority = data[2].toInt().toBoolean()
             val frameRate = data[3].toInt()
             val afMode = parseAFMode(data[4].toInt())
-            val noiseReduction = parseNoiseReductionMode(data[5].toInt())
+            val noiseReduction = parseNoiseReductionMode((data[5].toInt() shr 7) and 1)
             var noiseReductionStrength: Int? = null
             if (noiseReduction == NoiseReductionMode.FIXED) {
-                noiseReductionStrength = data[5].toInt()
+                noiseReductionStrength =  data[5].toInt() - 0x80
             }
-            val scanMode = data[6].toInt().toBoolean()
+            val scanMode = data[6].toInt() == 0x20
             val colorMode = parseColorMode(data[7].toInt())
             val colorModeThreshold = data[8].toInt()
             val jpegMode =  data[9].toInt().toBoolean()
             val jpegQFactor = data[10].toInt()
-            val autoRotation = data[11].toInt().toBoolean()
-            val forceLeftEye = data[12].toInt().toBoolean()
+
 
             return CameraValues(exposure, priority, frameRate, afMode,
                 noiseReduction, noiseReductionStrength, scanMode, colorMode,
-                colorModeThreshold, jpegMode, jpegQFactor, autoRotation, forceLeftEye)
+                colorModeThreshold, jpegMode, jpegQFactor)
         }
         return null
     }
@@ -470,14 +436,11 @@ data class CameraValues(val exposure: Exposure?,
                         val colorMode: ColorMode?,
                         val colorModeThreshold: Int,
                         val jpegMode: Boolean,
-                        val jpegQFactor: Int,
-                        val autoRotation: Boolean,
-                        val forceLeftEye: Boolean) {
+                        val jpegQFactor: Int) {
     override fun toString(): String {
         return "exposure: $exposure, priority: $priority, frameRate: $frameRate, autoFocusMode: ${autoFocusMode?.name}, " +
                 "noiseReduction: ${noiseReduction.toString()}, scanMode: $scanMode, colorMode: ${colorMode?.name}, " +
-                "colorModeThreshold: $colorModeThreshold, jpegMode: $jpegMode, jpegQFactor: $jpegQFactor, " +
-                "autoRotation: $autoRotation, forceLeftEye: $forceLeftEye"
+                "colorModeThreshold: $colorModeThreshold, jpegMode: $jpegMode, jpegQFactor: $jpegQFactor"
     }
 }
 
