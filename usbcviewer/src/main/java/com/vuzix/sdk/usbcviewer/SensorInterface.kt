@@ -321,8 +321,8 @@ class SensorInterface(usbManager: UsbManager, device: UsbDevice, usbInterface: U
                 // LogUtil.debug("Accelerometer: ID=${reportId} state=${sensorState} event=${sensorEvent} X=${deviceXData},Y=${deviceYData},Z=${deviceZData}")
                 // Device X+ is towards power button; Y+ is toward camera; Z+ towards nav buttons
                 val accel = floatArrayOf(
-                    calculateAccelData(deviceXData),
-                    calculateAccelData(deviceZData),
+                    calculateAccelData((-deviceXData).toShort()),
+                    calculateAccelData((-deviceZData).toShort()),
                     calculateAccelData(deviceYData)
                 )
                 if (smooth) {
@@ -337,9 +337,9 @@ class SensorInterface(usbManager: UsbManager, device: UsbDevice, usbInterface: U
                 // LogUtil.debug("Gyro: ID=${reportId} state=${sensorState} event=${sensorEvent} X=${deviceXData},Y=${deviceYData},Z=${deviceZData}")
                 // Device X+ is towards power button; Y+ is toward camera; Z+ towards nav buttons
                 val gyroData = floatArrayOf(
-                    calculateGyroData((deviceXData)),
-                    calculateGyroData((-deviceZData).toShort()),
-                    calculateGyroData((deviceYData))
+                    calculateGyroData(deviceXData),
+                    calculateGyroData(deviceZData),
+                    calculateGyroData((-deviceYData).toShort())
                 )
                 if (smooth) {
                     val gyroAvg = floatArrayOf(0f, 0f, 0f)
@@ -355,9 +355,9 @@ class SensorInterface(usbManager: UsbManager, device: UsbDevice, usbInterface: U
                 // " X=${deviceXData},Y=${deviceYData},Z=${deviceZData}, Accuracy=${deviceAccuracy}")
                 // Different from orientation! Device X+ is towards power button; Y+ is toward USB; Z+ towards bottom of hinge
                 val magnetometerData = floatArrayOf(
-                    calculateMagnetometerData((-deviceXData).toShort()),
-                    calculateMagnetometerData((-deviceZData).toShort()),
-                    calculateMagnetometerData((deviceYData).toShort())
+                    calculateMagnetometerData(deviceXData),
+                    calculateMagnetometerData(deviceZData),
+                    calculateMagnetometerData(deviceYData)
                 )
                 if (smooth) {
                     val magAvg = floatArrayOf(0f, 0f, 0f)
