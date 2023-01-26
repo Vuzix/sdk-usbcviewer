@@ -192,3 +192,6 @@ The best way for Android to handle an external UVC camera is with an external C 
 ## Technical Support
 Developers that own Vuzix USB-C viewer hardware may direct integration questions to
 [Vuzix technical support](https://www.vuzix.com/pages/contact-technical-support).
+
+## For full terms and conditions on usage of this SDK, refer here:
+https://www.vuzix.com/pages/vuzix%C2%AE-software-development-kit-license-and-confidentiality-agreement
